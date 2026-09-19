@@ -1,139 +1,131 @@
 # Ebook Factory
 
-Private single-user panel that runs a full demo ebook production pipeline —
-strategy, research, outline, draft, edit, fact-check, cover design, PDF/EPUB
-publishing, marketing assets, QA and delivery packaging — and produces a
-ready-to-review sales package. No autopublishing, no payments, no external
-paid APIs: every artifact is generated deterministically so the full
-lifecycle can be tested end to end for free.
+AGPL-3.0-only local-first ebook production workspace. Ebook Factory runs a
+bounded pipeline that creates strategy notes, research, outline, chapters,
+cover assets, PDF/EPUB builds, marketing files, QA reports, and a delivery ZIP.
 
-Spec: `docs/superpowers/specs/2026-09-19-ebook-factory-design.md`
-Plan: `docs/superpowers/plans/2026-09-19-ebook-factory-mvp.md`
+The default `demo` provider is deterministic and free. Operators can opt in per
+project to their own local Codex CLI or Claude Code installation. Ebook Factory
+does not store provider credentials.
 
-## Requirements
+## Screenshots
 
-- Python 3.11+
-- Optional: `typst` on `PATH` (or at `~/.local/bin/typst`) for higher-fidelity
-  PDF output. Without it, the pipeline falls back to a pure-stdlib PDF writer
-  and records which engine ran in the QA report.
-- Optional: `pdftotext` (poppler-utils) on `PATH` for extracting text from
-  uploaded PDF source files. Without it, PDFs are still stored but their
-  text is not appended to `source_materials` (extraction is reported as
-  `unavailable`).
+![Desktop workspace](docs/screenshots/desktop-workspace.png)
+![Tablet workspace](docs/screenshots/tablet-workspace.png)
+![Mobile workspace](docs/screenshots/mobile-workspace.png)
 
-## Setup
+## Architecture
 
-```bash
-python3 -m venv .venv
-.venv/bin/pip install -e ".[dev]"
+```mermaid
+flowchart LR
+  UI[Vanilla HTML/CSS/JS workspace] --> API[FastAPI API]
+  API --> Repo[(SQLite repository)]
+  API --> Runner[Pipeline runner]
+  Runner --> Registry[Provider registry]
+  Registry --> Demo[demo provider]
+  Registry --> Codex[Codex CLI]
+  Registry --> Claude[Claude Code]
+  Runner --> Stages[Deterministic artifact stages]
+  Stages --> Files[Project workspace and delivery ZIP]
 ```
 
-## Running the server
+The provider protocol isolates agent execution from stage packaging. CLI
+providers run with argv lists, `shell=False`, bounded timeout, project-local
+working directory, captured logs, and output-file containment.
+
+## Quick start
 
 ```bash
-.venv/bin/python scripts/run_server.py --host 127.0.0.1 --port 8765 --data-dir data
+python -m venv .venv
+.venv/bin/python -m pip install -e ".[dev]"
+PYTHONPATH=src .venv/bin/python scripts/run_server.py --host 127.0.0.1 --port 8765 --data-dir data
 ```
 
-Then open `http://127.0.0.1:8765` for the dashboard, or `GET /health` to
-check liveness. `--data-dir` controls where the SQLite database
-(`factory.db`) and per-project artifact folders (`projects/<slug>/`) are
-written; it is created if missing and survives process restarts.
+Open `http://127.0.0.1:8765`.
 
-## Testing
-
-Run the full suite with the project's virtualenv:
+Run tests:
 
 ```bash
-.venv/bin/pytest -q
+PYTHONPATH=src .venv/bin/pytest -q
+node --check src/ebook_factory/static/app.js
 ```
 
-### Smoke test
+## Providers
 
-`scripts/smoke_e2e.py` is a stdlib-only black-box HTTP client that creates a
-lead-magnet project against a **running** server, starts it, polls to
-completion, downloads the delivery ZIP and validates every required file and
-its SHA-256 manifest entry. It is independent of the dev virtualenv so it can
-also be run against a deployed instance:
+`GET /api/providers` reports provider availability:
+
+- `demo`: always available, deterministic, no paid service required.
+- `codex-cli`: uses your local third-party Codex CLI installation.
+- `claude-code`: uses your local third-party Claude Code installation.
+
+Codex CLI and Claude Code are third-party tools. You are responsible for your
+own subscriptions, logins, usage limits, and provider terms.
+
+Optional executable overrides:
 
 ```bash
-.venv/bin/python scripts/run_server.py --host 127.0.0.1 --port 8765 --data-dir /tmp/ef-smoke &
-.venv/bin/python scripts/smoke_e2e.py http://127.0.0.1:8765
+export EBOOK_FACTORY_CODEX_CLI=/path/to/codex
+export EBOOK_FACTORY_CLAUDE_CODE=/path/to/claude
 ```
 
-Prints `PASS` and exits `0` on success; prints `FAIL: <reason>` and exits
-non-zero on any missing/invalid artifact or timeout.
+Provider credentials remain inside those tools. Ebook Factory only launches the
+selected executable for the selected project.
 
-## API overview
-
-All endpoints are served from the same FastAPI app as the static dashboard.
+## API
 
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/health` | Liveness check |
-| POST | `/api/projects` | Create a project (`title`, `topic`, `mode`, ...) |
+| GET | `/api/providers` | Provider labels and availability |
+| POST | `/api/projects` | Create project, default provider `demo` |
 | GET | `/api/projects` | List projects |
-| GET | `/api/projects/{id}` | Project detail with stages |
-| POST | `/api/projects/{id}/start` | Start/resume the pipeline in the background |
-| POST | `/api/projects/{id}/pause` | Request pause after the current stage |
-| POST | `/api/projects/{id}/resume` | Resume a paused project |
-| POST | `/api/projects/{id}/cancel` | Cancel |
+| GET | `/api/projects/{id}` | Detail with stages |
+| POST | `/api/projects/{id}/start` | Start background pipeline |
+| POST | `/api/projects/{id}/pause` | Pause after current stage |
+| POST | `/api/projects/{id}/resume` | Resume paused project |
+| POST | `/api/projects/{id}/cancel` | Cancel project |
+| POST | `/api/projects/{id}/sources` | Upload `.txt`, `.md`, `.pdf` source files |
 | GET | `/api/projects/{id}/events` | Event log |
 | GET | `/api/projects/{id}/download` | Delivery ZIP |
-| POST | `/api/projects/{id}/sources` | Upload source-material files (multipart) |
 
-Modes: `lead-magnet`, `guide`, `premium`. The pipeline runs each project on
-its own background thread, persists state after every stage so it survives a
-process restart, and retries a failing stage up to three times before
-marking the project `failed`.
+Project modes: `lead-magnet`, `guide`, `premium`.
+Providers: `demo`, `codex-cli`, `claude-code`.
 
-### Source-material uploads
+## Security and privacy
 
-`POST /api/projects/{id}/sources` accepts a `multipart/form-data` request
-with one or more `files` parts. Uploads are bounded and sanitized:
+- No credentials are stored by Ebook Factory.
+- Source uploads are size-bounded, extension-checked, and filename-sanitized.
+- Provider subprocesses run non-interactively inside the project workspace.
+- Event logs record provider and stage status without storing full prompts or
+  complete source material.
+- Do not commit `.env`, `data/`, `projects/`, SQLite databases, generated
+  ebooks, delivery ZIPs, virtualenvs, or provider credentials.
 
-- Only `.txt`, `.md`, `.pdf` extensions are accepted (case-insensitive);
-  anything else is rejected with `422`.
-- Each file must be non-empty and at most 5 MiB; a project may hold at most
-  5 source files total (checked cumulatively across requests).
-- Filenames are sanitized to a flat, safe basename before storage — path
-  separators and traversal segments (e.g. `../../etc/passwd.txt`) are
-  stripped so files can only ever land under `projects/<slug>/sources/`.
-- On success, each file is described in the response as
-  `{filename, stored_path, size_bytes, extraction_status, extracted_chars}`.
-  `extraction_status` is `extracted`, `empty`, or `unavailable` (PDF text
-  extraction requires `pdftotext`; without it the file is still stored).
-- Extracted text is appended to the project's `source_materials` (used by
-  the `strategy` and `research` stages) without exceeding the existing
-  50,000-character cap — text beyond the cap is truncated, never rejected.
+## AI disclosure
 
-The dashboard's "Nowy ebook" dialog includes a `.txt,.md,.pdf` multi-file
-picker; selected files are uploaded right after the project is created (and
-before the pipeline is started), with a clear inline error if the upload is
-rejected.
+Ebook Factory is AI-assisted software. Generated materials require human review,
+source verification, legal review where appropriate, and editorial approval
+before publication or sale.
 
-## Deployment
-
-`deploy/start-production.sh` runs the server as a supervised background
-process with logs under `deploy/logs/`. `deploy/cloudflared-tunnel.sh`
-exposes it over HTTPS via a Cloudflare Quick Tunnel (using an installed
-`cloudflared` if present, otherwise downloading the official binary into
-`~/.local/bin`). Both scripts run under `set -euo pipefail`, bind only to the
-host/port/data-dir passed as arguments, and never embed secrets or tokens.
+## Optional production helper
 
 ```bash
 deploy/start-production.sh --host 127.0.0.1 --port 8765 --data-dir data
-deploy/cloudflared-tunnel.sh --port 8765
 ```
 
-The tunnel script prints the public `https://*.trycloudflare.com` URL once
-`cloudflared` reports it in its logs.
+The Cloudflare tunnel helper is included for local review, but this repository
+does not start persistent tunnels automatically.
 
 ## Project layout
 
 ```text
-src/ebook_factory/       FastAPI app, pipeline, stages, artifacts, static dashboard
-scripts/run_server.py    One-command launcher
-scripts/smoke_e2e.py     Stdlib-only black-box smoke test
-deploy/                  Production launch + tunnel scripts
-tests/                   pytest suite (unit, API, static UI, E2E)
+src/ebook_factory/       FastAPI app, provider adapters, pipeline, stages, UI
+scripts/                 Server launcher and smoke E2E client
+deploy/                  Local production helper scripts
+docs/screenshots/        Public README screenshots
+tests/                   Unit, API contract, provider, static UI, release tests
 ```
+
+## License
+
+AGPL-3.0-only. See [LICENSE](LICENSE).

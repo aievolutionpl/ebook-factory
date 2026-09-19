@@ -42,20 +42,22 @@ CSS values must resolve through tokens in `:root`; component rules should not in
 - Radius: `--radius-sm: 6px`, `--radius-md: 8px`, `--radius-lg: 12px`.
 - Motion: `--duration-fast: 120ms`, `--duration-base: 200ms`, `--ease-standard: cubic-bezier(0.2, 0, 0, 1)`.
 - Type: system sans only. `--text-xs: 12px`, `--text-sm: 13px`, `--text-base: 15px`, `--text-lg: 18px`, `--text-xl: 24px`, `--text-2xl: 32px`.
-- Workspace widths: `--rail-width: 312px`, `--inspector-width: 320px`, `--composer-height: 64px`.
+- Workspace widths: `--rail-width: 280px`, `--inspector-width: 300px`, `--composer-height: 64px`.
 
 ## Layout
 
 - **Desktop >=1150px:** three columns: left project rail, center active workspace, right inspector. Bottom command composer is fixed and maps only to existing project actions.
-- **Tablet >=768px and <1150px:** intentional two-panel layout: project rail plus workspace, with inspector below the two panels.
+- **Tablet >=768px and <1150px:** single dominant workspace with the project rail as an explicit drawer and inspector below the workspace flow.
 - **Mobile around 390px:** single workspace flow. Project rail behaves as the project drawer area, inspector becomes a bottom sheet, contextual action is sticky, and horizontal overflow is forbidden.
 - **Center workspace:** header with mode/title/status/contextual action, progress cluster, and tabs for Workflow, Files, Activity.
 - **Right inspector:** outputs, sources, recent activity, and download link when completed.
+- **Provider context:** project header and inspector both show the selected provider and local availability.
 
 ## Components
 
 - **Project rail:** search, status filters, `+ New`, loading skeleton, empty and error copy.
 - **New project dialog:** accessible four-screen flow built from a 3-step wizard plus review: Goal & format, Audience/brand, Sources/settings, Review before submit. Existing field IDs and upload behavior are preserved.
+- **Provider selector:** part of Sources/settings. `demo` remains the default; Codex CLI and Claude Code are opt-in local tools with setup guidance and availability status.
 - **Command palette:** Ctrl/Cmd+K opens; ArrowUp/ArrowDown moves active command; Enter executes; Esc closes; focus returns to the trigger.
 - **Command composer:** visible desktop/tablet command strip. Commands are limited to existing `start`, `pause`, `resume`, `cancel`, and `download`.
 - **Feedback:** toast region for action results, explicit error banners, skeleton loading, and empty states.

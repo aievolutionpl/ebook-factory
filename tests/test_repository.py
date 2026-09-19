@@ -32,6 +32,7 @@ def test_slug_is_unique_when_titles_collide(repo):
 def test_create_project_accepts_all_three_modes(repo, mode):
     created = repo.create_project(ProjectCreate(title=f"Test {mode}", topic="X", mode=mode))
     assert created.mode == mode
+    assert created.provider == "demo"
     assert created.status == "draft"
     assert created.progress == 0
 
@@ -39,6 +40,15 @@ def test_create_project_accepts_all_three_modes(repo, mode):
 def test_invalid_mode_is_rejected(repo):
     with pytest.raises(ValueError):
         ProjectCreate(title="Bad", topic="X", mode="not-a-real-mode")
+
+
+def test_provider_is_validated(repo):
+    created = repo.create_project(
+        ProjectCreate(title="Provider", topic="X", mode="guide", provider="codex-cli")
+    )
+    assert created.provider == "codex-cli"
+    with pytest.raises(ValueError):
+        ProjectCreate(title="Bad provider", topic="X", mode="guide", provider="remote-api")
 
 
 def test_source_materials_at_max_length_is_accepted(repo):
@@ -71,6 +81,72 @@ def test_project_survives_repository_reopen(tmp_path):
     reopened = ProjectRepository(tmp_path / "factory.db")
     assert reopened.get_project(created.id).title == "AI dla firm"
     reopened.close()
+
+
+def test_old_database_without_provider_column_migrates_to_demo(tmp_path):
+    import sqlite3
+
+    db_path = tmp_path / "factory.db"
+    conn = sqlite3.connect(db_path)
+    conn.executescript(
+        """
+        CREATE TABLE projects (
+            id TEXT PRIMARY KEY,
+            slug TEXT NOT NULL UNIQUE,
+            title TEXT NOT NULL,
+            topic TEXT NOT NULL,
+            mode TEXT NOT NULL,
+            language TEXT NOT NULL,
+            audience TEXT NOT NULL,
+            brand TEXT NOT NULL,
+            tone TEXT NOT NULL,
+            source_materials TEXT,
+            status TEXT NOT NULL,
+            progress INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            error TEXT
+        );
+        CREATE TABLE stages (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL REFERENCES projects(id),
+            name TEXT NOT NULL,
+            position INTEGER NOT NULL,
+            status TEXT NOT NULL,
+            attempts INTEGER NOT NULL,
+            started_at TEXT,
+            finished_at TEXT,
+            message TEXT NOT NULL,
+            artifact_paths TEXT NOT NULL
+        );
+        CREATE TABLE events (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL REFERENCES projects(id),
+            timestamp TEXT NOT NULL,
+            level TEXT NOT NULL,
+            message TEXT NOT NULL
+        );
+        INSERT INTO projects (
+            id, slug, title, topic, mode, language, audience, brand, tone,
+            source_materials, status, progress, created_at, updated_at, error
+        ) VALUES (
+            'old-id', 'old-project', 'Old Project', 'AI', 'guide', 'pl',
+            '', '', '', NULL, 'draft', 0, '2026-01-01T00:00:00+00:00',
+            '2026-01-01T00:00:00+00:00', NULL
+        );
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    repo = ProjectRepository(db_path)
+    try:
+        migrated = repo.get_project("old-id")
+        assert migrated.provider == "demo"
+        created = repo.create_project(ProjectCreate(title="New", topic="AI", mode="guide"))
+        assert created.provider == "demo"
+    finally:
+        repo.close()
 
 
 def test_stages_survive_repository_reopen(tmp_path):

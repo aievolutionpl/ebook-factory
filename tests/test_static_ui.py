@@ -342,3 +342,69 @@ def test_visible_shell_copy_is_consistently_polish():
         assert hybrid not in html
     for label in ("Uruchom projekt", "Wstrzymaj po bieżącym etapie", "Wznów projekt", "Anuluj projekt", "Pobierz paczkę ZIP"):
         assert label in app_js
+
+
+def test_provider_controls_and_status_are_exposed():
+    html = read("index.html")
+    app_js = read("app.js")
+    for fragment in (
+        'id="field-provider"',
+        'name="provider"',
+        'id="provider-guidance"',
+        'id="detail-provider"',
+        'id="inspector-provider-status"',
+    ):
+        assert fragment in html
+    assert "/api/providers" in app_js
+    assert "loadProviders" in app_js
+    assert "PROVIDER_LABELS" in app_js
+    assert "renderProviderStatus" in app_js
+
+
+def test_stage_ids_are_translated_for_users():
+    app_js = read("app.js")
+    assert "STAGE_LABELS" in app_js
+    for label in (
+        "Strategia",
+        "Research",
+        "Architektura",
+        "Pisanie",
+        "Redakcja",
+        "Weryfikacja faktów",
+        "Projekt okładki",
+        "Publikacja",
+        "Marketing",
+        "Kontrola jakości",
+        "Paczka końcowa",
+    ):
+        assert label in app_js
+    assert "stage.name : 'Oczekuje na start'" not in app_js
+    assert "escapeHtml(stage.name)" not in app_js
+
+
+def test_completion_summary_and_single_dominant_action_surface():
+    html = read("index.html")
+    css = read("styles.css")
+    app_js = read("app.js")
+    assert 'id="completion-summary"' in html
+    assert "renderCompletionSummary" in app_js
+    assert "Projekt gotowy do pobrania" in app_js
+    assert not re.search(r"\.command-composer\s*{[^}]*position:\s*fixed", css, re.S)
+    assert re.search(r"\.workspace-panel\s*{[^}]*overflow-y:\s*auto", css, re.S)
+
+
+def test_tablet_uses_project_drawer_and_calm_dimensions():
+    css = read("styles.css")
+    assert "--rail-width: 280px" in css
+    assert "--inspector-width: 300px" in css
+    assert "@media (min-width: 768px) and (max-width: 1149px)" in css
+    assert re.search(
+        r"@media \(min-width: 768px\) and \(max-width: 1149px\).*?\.project-rail\s*{[^}]*position:\s*fixed",
+        css,
+        re.S,
+    )
+    assert re.search(
+        r"@media \(min-width: 768px\) and \(max-width: 1149px\).*?\.workspace-shell\s*{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)",
+        css,
+        re.S,
+    )

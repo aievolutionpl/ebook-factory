@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS projects (
     brand TEXT NOT NULL,
     tone TEXT NOT NULL,
     source_materials TEXT,
+    provider TEXT NOT NULL DEFAULT 'demo',
     status TEXT NOT NULL,
     progress INTEGER NOT NULL,
     created_at TEXT NOT NULL,
@@ -76,6 +77,7 @@ def _row_to_project(row: sqlite3.Row) -> Project:
         brand=row["brand"],
         tone=row["tone"],
         source_materials=row["source_materials"],
+        provider=row["provider"],
         status=row["status"],
         progress=row["progress"],
         created_at=row["created_at"],
@@ -124,7 +126,18 @@ class ProjectRepository:
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.executescript(SCHEMA)
+        self._migrate()
         self._conn.commit()
+
+    def _migrate(self) -> None:
+        columns = {
+            row["name"]
+            for row in self._conn.execute("PRAGMA table_info(projects)").fetchall()
+        }
+        if "provider" not in columns:
+            self._conn.execute(
+                "ALTER TABLE projects ADD COLUMN provider TEXT NOT NULL DEFAULT 'demo'"
+            )
 
     def close(self) -> None:
         with self._lock:
@@ -152,8 +165,8 @@ class ProjectRepository:
                 """
                 INSERT INTO projects (
                     id, slug, title, topic, mode, language, audience, brand, tone,
-                    source_materials, status, progress, created_at, updated_at, error
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    source_materials, provider, status, progress, created_at, updated_at, error
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     project_id,
@@ -166,6 +179,7 @@ class ProjectRepository:
                     data.brand,
                     data.tone,
                     data.source_materials,
+                    data.provider,
                     "draft",
                     0,
                     now,
@@ -234,6 +248,7 @@ class ProjectRepository:
                 "brand",
                 "tone",
                 "source_materials",
+                "provider",
                 "status",
                 "progress",
                 "error",

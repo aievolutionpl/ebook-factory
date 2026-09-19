@@ -40,6 +40,7 @@ def test_create_and_fetch_project(client):
     assert r.status_code == 201
     body = r.json()
     assert body["title"] == "AI dla firm"
+    assert body["provider"] == "demo"
     assert body["status"] == "draft"
     assert "stages" in body
     assert len(body["stages"]) == 11
@@ -52,6 +53,35 @@ def test_create_and_fetch_project(client):
 def test_create_project_invalid_mode_returns_422(client):
     r = client.post("/api/projects", json={"title": "X", "topic": "Y", "mode": "not-a-mode"})
     assert r.status_code == 422
+
+
+def test_create_project_accepts_and_returns_provider(client):
+    r = client.post(
+        "/api/projects",
+        json={"title": "Agent", "topic": "AI", "mode": "guide", "provider": "claude-code"},
+    )
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["provider"] == "claude-code"
+    detail = client.get(f"/api/projects/{body['id']}")
+    assert detail.json()["provider"] == "claude-code"
+
+
+def test_create_project_invalid_provider_returns_422(client):
+    r = client.post(
+        "/api/projects",
+        json={"title": "Bad Agent", "topic": "AI", "mode": "guide", "provider": "remote-api"},
+    )
+    assert r.status_code == 422
+
+
+def test_providers_endpoint_lists_availability(client):
+    r = client.get("/api/providers")
+    assert r.status_code == 200
+    by_name = {entry["name"]: entry for entry in r.json()}
+    assert set(by_name) == {"demo", "codex-cli", "claude-code"}
+    assert by_name["demo"]["available"] is True
+    assert by_name["codex-cli"]["label"] == "Codex CLI"
 
 
 def test_create_project_missing_title_returns_422(client):
@@ -426,3 +456,22 @@ def test_uploaded_source_text_flows_into_strategy_and_research_stages(client, tm
     research_path = tmp_path / "projects" / project["slug"] / "research" / "notes.md"
     assert marker in strategy_path.read_text(encoding="utf-8")
     assert marker in research_path.read_text(encoding="utf-8")
+
+
+def test_unavailable_provider_fails_before_stage_execution(client, tmp_path, monkeypatch):
+    missing = tmp_path / "missing-codex"
+    monkeypatch.setenv("EBOOK_FACTORY_CODEX_CLI", str(missing))
+    r = client.post(
+        "/api/projects",
+        json={"title": "No agent", "topic": "T", "mode": "lead-magnet", "provider": "codex-cli"},
+    )
+    pid = r.json()["id"]
+
+    start = client.post(f"/api/projects/{pid}/start")
+    assert start.status_code == 202
+    final = wait_for_status(client, pid, {"completed", "failed"}, timeout=10)
+
+    assert final["status"] == "failed"
+    assert "provider codex-cli is not available" in final["error"]
+    stages = client.get(f"/api/projects/{pid}").json()["stages"]
+    assert stages[0]["status"] == "pending"

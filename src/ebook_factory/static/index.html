@@ -70,6 +70,7 @@
             <p class="eyebrow" id="detail-mode"></p>
             <h1 id="detail-title"></h1>
             <p class="meta" id="detail-meta"></p>
+            <p class="meta provider-meta" id="detail-provider"></p>
           </div>
           <span class="status-chip" id="detail-status"></span>
           <button type="button" class="btn btn-primary contextual-action" id="workspace-primary-action">Start</button>
@@ -86,6 +87,7 @@
         </div>
 
         <p class="error-banner" id="error-banner" hidden></p>
+        <section class="completion-summary" id="completion-summary" hidden></section>
 
         <div class="tabbar" role="tablist" aria-label="Widoki projektu">
           <button type="button" role="tab" aria-selected="true" aria-controls="panel-workflow" id="tab-workflow" class="tab is-active" data-tab="workflow">Proces</button>
@@ -108,6 +110,10 @@
     <aside class="inspector-panel" aria-label="Inspektor projektu" id="inspector-panel" hidden>
       <button type="button" class="sheet-handle" id="inspector-sheet-toggle" aria-expanded="false" aria-controls="inspector-body">Inspektor</button>
       <div id="inspector-body" class="inspector-body">
+        <section>
+          <h2>Agent</h2>
+          <p id="inspector-provider-status" class="provider-status">Demo</p>
+        </section>
         <section>
           <h2>Wyniki</h2>
           <ul id="inspector-outputs" class="inspector-list"></ul>
@@ -207,6 +213,15 @@
       </section>
 
       <section class="wizard-step" id="wizard-step-sources" data-step="2" hidden>
+        <div class="field">
+          <label for="field-provider">Agent lokalny</label>
+          <select id="field-provider" name="provider" aria-describedby="provider-guidance">
+            <option value="demo" selected>Demo (deterministyczny)</option>
+            <option value="codex-cli">Codex CLI</option>
+            <option value="claude-code">Claude Code</option>
+          </select>
+          <p class="field-help" id="provider-guidance">Codex CLI i Claude Code są narzędziami lokalnymi użytkownika. Ebook Factory nie przechowuje danych logowania.</p>
+        </div>
         <div class="field">
           <label for="field-source-materials">Materiały źródłowe (opcjonalnie, max 50000 znaków)</label>
           <textarea id="field-source-materials" name="source_materials" maxlength="50000" rows="6" placeholder="Wklej notatki, fakty lub źródła do wykorzystania w strategii i researchu"></textarea>

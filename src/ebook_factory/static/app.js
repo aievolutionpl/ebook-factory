@@ -5,6 +5,7 @@
     projects: [],
     selectedId: null,
     selectedProject: null,
+    providers: [],
     events: [],
     pollTimer: null,
     statusFilter: 'all',
@@ -28,6 +29,7 @@
     detailTitle: document.getElementById('detail-title'),
     detailMode: document.getElementById('detail-mode'),
     detailMeta: document.getElementById('detail-meta'),
+    detailProvider: document.getElementById('detail-provider'),
     detailStatus: document.getElementById('detail-status'),
     progressFill: document.getElementById('progress-bar-fill'),
     progressBar: document.getElementById('progress-bar'),
@@ -36,10 +38,12 @@
     workspacePrimaryAction: document.getElementById('workspace-primary-action'),
     mobilePrimaryAction: document.getElementById('mobile-primary-action'),
     errorBanner: document.getElementById('error-banner'),
+    completionSummary: document.getElementById('completion-summary'),
     stageTimeline: document.getElementById('stage-timeline'),
     eventsLog: document.getElementById('events-log'),
     workspaceFiles: document.getElementById('workspace-files'),
     inspectorPanel: document.getElementById('inspector-panel'),
+    inspectorProviderStatus: document.getElementById('inspector-provider-status'),
     inspectorToggle: document.getElementById('inspector-sheet-toggle'),
     inspectorOutputs: document.getElementById('inspector-outputs'),
     inspectorSources: document.getElementById('inspector-sources'),
@@ -53,6 +57,7 @@
     cancelNewProject: document.getElementById('cancel-new-project'),
     formError: document.getElementById('form-error'),
     sourceFilesInput: document.getElementById('field-source-files'),
+    fieldProvider: document.getElementById('field-provider'),
     backToList: document.getElementById('back-to-list'),
     bottomNavButtons: document.querySelectorAll('.bottom-nav-item'),
     bottomInspectorButton: document.querySelector('[data-nav="inspector"]'),
@@ -79,6 +84,26 @@
     'lead-magnet': 'Lead magnet',
     guide: 'Poradnik ekspercki',
     premium: 'Książka premium',
+  };
+
+  var PROVIDER_LABELS = {
+    demo: 'Demo',
+    'codex-cli': 'Codex CLI',
+    'claude-code': 'Claude Code',
+  };
+
+  var STAGE_LABELS = {
+    strategy: 'Strategia',
+    research: 'Research',
+    outline: 'Architektura',
+    draft: 'Pisanie',
+    edit: 'Redakcja',
+    fact_check: 'Weryfikacja faktów',
+    design: 'Projekt okładki',
+    publish: 'Publikacja',
+    marketing: 'Marketing',
+    qa: 'Kontrola jakości',
+    delivery: 'Paczka końcowa',
   };
 
   var STATUS_LABELS = {
@@ -196,6 +221,50 @@
     }
   }
 
+  async function loadProviders() {
+    try {
+      var response = await apiFetch('/api/providers');
+      state.providers = await response.json();
+      renderProviderOptions();
+      if (state.selectedProject) renderProviderStatus(state.selectedProject);
+    } catch (err) {
+      state.providers = [{ name: 'demo', label: 'Demo', available: true }];
+      renderProviderOptions();
+      showToast('Nie udało się wczytać statusu agentów: ' + err.message);
+    }
+  }
+
+  function providerInfo(name) {
+    return state.providers.find(function (provider) { return provider.name === name; }) || {
+      name: name || 'demo',
+      label: PROVIDER_LABELS[name] || name || 'Demo',
+      available: name === 'demo',
+    };
+  }
+
+  function renderProviderOptions() {
+    if (!el.fieldProvider) return;
+    var selected = el.fieldProvider.value || 'demo';
+    Array.from(el.fieldProvider.options).forEach(function (option) {
+      var info = providerInfo(option.value);
+      option.textContent = (PROVIDER_LABELS[option.value] || info.label) +
+        (info.available ? '' : ' — niedostępny lokalnie');
+      option.disabled = option.value !== 'demo' && !info.available;
+    });
+    el.fieldProvider.value = el.fieldProvider.querySelector('option[value="' + selected + '"]:not(:disabled)')
+      ? selected
+      : 'demo';
+  }
+
+  function renderProviderStatus(project) {
+    var info = providerInfo(project.provider || 'demo');
+    var availability = info.available ? 'dostępny' : 'niedostępny lokalnie';
+    var text = 'Agent: ' + (PROVIDER_LABELS[info.name] || info.label) + ' · ' + availability;
+    el.detailProvider.textContent = text;
+    el.inspectorProviderStatus.textContent = text;
+    el.inspectorProviderStatus.dataset.available = info.available ? 'true' : 'false';
+  }
+
   function filteredProjects() {
     var query = state.searchQuery.trim().toLowerCase();
     return state.projects.filter(function (project) {
@@ -284,12 +353,13 @@
     el.detailTitle.textContent = project.title;
     el.detailMode.textContent = MODE_LABELS[project.mode] || project.mode;
     el.detailMeta.textContent = project.topic + ' · ' + (project.audience || 'odbiorca nieokreślony');
+    renderProviderStatus(project);
     el.detailStatus.dataset.status = project.status;
     el.detailStatus.textContent = STATUS_LABELS[project.status] || project.status;
     el.progressFill.style.transform = 'scaleX(' + (project.progress / 100) + ')';
     el.progressBar.setAttribute('aria-valuenow', String(project.progress));
     el.progressLabel.textContent = project.progress + '% ukończono';
-    el.stageLabel.textContent = stage ? stage.name : 'Oczekuje na start';
+    el.stageLabel.textContent = stage ? stageLabel(stage.name) : 'Oczekuje na start';
     el.workspacePrimaryAction.textContent = COMMAND_LABELS[command] || command;
     el.workspacePrimaryAction.dataset.command = command;
     el.mobilePrimaryAction.textContent = COMMAND_LABELS[command] || command;
@@ -300,7 +370,25 @@
 
     renderStages(project.stages || []);
     renderFiles(project);
+    renderCompletionSummary(project);
     updateMobileChrome();
+  }
+
+  function stageLabel(name) {
+    return STAGE_LABELS[name] || name;
+  }
+
+  function renderCompletionSummary(project) {
+    if (project.status !== 'completed') {
+      el.completionSummary.hidden = true;
+      el.completionSummary.innerHTML = '';
+      return;
+    }
+    el.completionSummary.hidden = false;
+    el.completionSummary.innerHTML =
+      '<h2>Projekt gotowy do pobrania</h2>' +
+      '<p>Pakiet ZIP zawiera PDF, EPUB, okładkę, materiały marketingowe i raport jakości.</p>' +
+      '<a class="btn btn-primary" href="/api/projects/' + encodeURIComponent(project.id) + '/download">Pobierz paczkę ZIP</a>';
   }
 
   function mapStageStatus(status) {
@@ -322,7 +410,7 @@
       item.className = 'stage-item';
       item.innerHTML =
         '<span class="stage-index">' + String(index + 1).padStart(2, '0') + '</span>' +
-        '<span class="stage-name">' + escapeHtml(stage.name) + '</span>' +
+        '<span class="stage-name">' + escapeHtml(stageLabel(stage.name)) + '</span>' +
         '<span class="status-chip" data-status="' + mapStageStatus(stage.status) + '">' +
         escapeHtml(STATUS_LABELS[mapStageStatus(stage.status)] || stage.status) + '</span>';
       el.stageTimeline.appendChild(item);
@@ -493,6 +581,7 @@
       ['Odbiorca', data.get('audience') || 'Nie ustawiono'],
       ['Marka', data.get('brand') || 'Nie ustawiono'],
       ['Ton', data.get('tone') || 'Nie ustawiono'],
+      ['Agent', PROVIDER_LABELS[data.get('provider')] || data.get('provider') || 'Demo'],
       ['Źródła', data.get('source_materials') ? 'Dołączono wklejony tekst' : 'Brak wklejonego tekstu'],
     ];
     el.wizardReview.innerHTML = rows.map(function (row) {
@@ -724,6 +813,7 @@
   el.commandPalette.addEventListener('close', restorePaletteFocus);
 
   checkHealth();
+  loadProviders();
   loadProjects();
   setActiveTab('workflow');
   renderPalette();

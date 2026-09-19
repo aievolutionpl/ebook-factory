@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from .models import MAX_SOURCE_MATERIALS_CHARS, Event, Project, ProjectCreate, Stage
 from .pipeline import PipelineRunner
+from .providers import provider_statuses
 from .sources import (
     MAX_SOURCE_FILES_PER_PROJECT,
     SourceUploadError,
@@ -32,6 +33,7 @@ class ProjectCreateRequest(BaseModel):
     brand: str = ""
     tone: str = ""
     source_materials: Optional[str] = Field(default=None, max_length=MAX_SOURCE_MATERIALS_CHARS)
+    provider: Literal["demo", "codex-cli", "claude-code"] = "demo"
 
 
 def _project_dict(project: Project, stages: Optional[list[Stage]] = None) -> dict:
@@ -45,6 +47,7 @@ def _project_dict(project: Project, stages: Optional[list[Stage]] = None) -> dic
         "audience": project.audience,
         "brand": project.brand,
         "tone": project.tone,
+        "provider": project.provider,
         "status": project.status,
         "progress": project.progress,
         "created_at": project.created_at,
@@ -170,6 +173,10 @@ def build_router(
     def health() -> dict:
         return {"status": "ok"}
 
+    @router.get("/api/providers")
+    def providers() -> list[dict[str, object]]:
+        return provider_statuses()
+
     @router.post("/api/projects", status_code=201)
     def create_project(payload: ProjectCreateRequest) -> dict:
         try:
@@ -182,6 +189,7 @@ def build_router(
                 brand=payload.brand,
                 tone=payload.tone,
                 source_materials=payload.source_materials,
+                provider=payload.provider,
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc

@@ -1,3 +1,5 @@
+import stat
+
 import pytest
 
 from ebook_factory.models import STAGE_DEFINITIONS, ProjectCreate
@@ -129,3 +131,41 @@ def test_project_directory_is_created_under_projects_root(repo, projects_root):
     project_dir = projects_root / project.slug
     assert project_dir.is_dir()
     assert (project_dir / f"{STAGE_NAMES[0]}.marker").exists()
+
+
+def test_non_demo_provider_runs_before_stage_handler_and_keeps_artifacts(
+    repo, projects_root, tmp_path, monkeypatch
+):
+    fake = tmp_path / "codex-fake"
+    fake.write_text(
+        """#!/usr/bin/env python3
+import pathlib
+import sys
+
+args = sys.argv[1:]
+output = pathlib.Path(args[args.index("--output-last-message") + 1])
+output.write_text("agent output from codex", encoding="utf-8")
+print("agent ran")
+""",
+        encoding="utf-8",
+    )
+    fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
+    monkeypatch.setenv("EBOOK_FACTORY_CODEX_CLI", str(fake))
+    project = repo.create_project(
+        ProjectCreate(title="Agent run", topic="AI", mode="lead-magnet", provider="codex-cli")
+    )
+    call_log = []
+    runner = PipelineRunner(repo, projects_root, stage_handlers=make_handlers(call_log))
+
+    result = runner.run(project.id, stop_requested=lambda: len(call_log) >= 1)
+
+    assert result.status == "paused"
+    project_dir = projects_root / project.slug
+    assert (project_dir / "agent" / f"{STAGE_NAMES[0]}.md").read_text(
+        encoding="utf-8"
+    ) == "agent output from codex"
+    first_stage = repo.get_stage(project.id, STAGE_NAMES[0])
+    assert f"{STAGE_NAMES[0]}.marker" in first_stage.artifact_paths
+    assert f"agent/{STAGE_NAMES[0]}.md" in first_stage.artifact_paths
+    events = [event.message for event in repo.list_events(project.id)]
+    assert any("provider=codex-cli stage=strategy" in message for message in events)

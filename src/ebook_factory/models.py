@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from typing import NamedTuple, Optional
 
 PROJECT_MODES: tuple[str, ...] = ("lead-magnet", "guide", "premium")
+PROJECT_PROVIDERS: tuple[str, ...] = ("demo", "codex-cli", "claude-code")
 PROJECT_STATUSES: tuple[str, ...] = (
     "draft",
     "running",
@@ -88,6 +89,7 @@ class ProjectCreate:
     brand: str = ""
     tone: str = ""
     source_materials: Optional[str] = None
+    provider: str = "demo"
 
     def __post_init__(self) -> None:
         if not self.title or not self.title.strip():
@@ -97,6 +99,10 @@ class ProjectCreate:
         if self.mode not in PROJECT_MODES:
             raise ValueError(
                 f"invalid mode {self.mode!r}; expected one of {PROJECT_MODES}"
+            )
+        if self.provider not in PROJECT_PROVIDERS:
+            raise ValueError(
+                f"invalid provider {self.provider!r}; expected one of {PROJECT_PROVIDERS}"
             )
         if self.source_materials is not None and len(self.source_materials) > MAX_SOURCE_MATERIALS_CHARS:
             raise ValueError(
@@ -121,6 +127,7 @@ class Project:
     created_at: str
     updated_at: str
     error: Optional[str] = None
+    provider: str = "demo"
 
 
 @dataclass
