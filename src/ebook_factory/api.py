@@ -11,7 +11,7 @@ from fastapi import APIRouter, FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from .models import Event, Project, ProjectCreate, Stage
+from .models import MAX_SOURCE_MATERIALS_CHARS, Event, Project, ProjectCreate, Stage
 from .pipeline import PipelineRunner
 
 
@@ -23,7 +23,7 @@ class ProjectCreateRequest(BaseModel):
     audience: str = ""
     brand: str = ""
     tone: str = ""
-    source_materials: Optional[str] = None
+    source_materials: Optional[str] = Field(default=None, max_length=MAX_SOURCE_MATERIALS_CHARS)
 
 
 def _project_dict(project: Project, stages: Optional[list[Stage]] = None) -> dict:
@@ -80,43 +80,60 @@ class _WorkerState:
         return self.thread is not None and self.thread.is_alive()
 
 
+class ProjectAlreadyRunningError(Exception):
+    """Raised when start() is called for a project that already has a live worker."""
+
+
 class WorkerRegistry:
-    """Tracks one background pipeline thread per project."""
+    """Tracks one background pipeline thread per project.
+
+    ``start()`` performs its "is it already running?" check and thread launch
+    under a single lock so two near-simultaneous callers can never both pass
+    the check and spawn two workers for the same project (see the Important
+    finding in the 2026-09-19 review: the previous check-then-start was racy
+    across the lock boundary).
+    """
 
     def __init__(self) -> None:
         self._states: dict[str, _WorkerState] = {}
         self._lock = threading.Lock()
 
-    def _state(self, project_id: str) -> _WorkerState:
-        with self._lock:
-            if project_id not in self._states:
-                self._states[project_id] = _WorkerState()
-            return self._states[project_id]
+    def _get_or_create_locked(self, project_id: str) -> _WorkerState:
+        if project_id not in self._states:
+            self._states[project_id] = _WorkerState()
+        return self._states[project_id]
 
     def is_running(self, project_id: str) -> bool:
-        return self._state(project_id).is_running()
+        with self._lock:
+            return self._get_or_create_locked(project_id).is_running()
 
     def start(self, project_id: str, runner: PipelineRunner, repository) -> None:
-        state = self._state(project_id)
-        state.stop_event.clear()
-        state.cancel_requested = False
+        with self._lock:
+            state = self._get_or_create_locked(project_id)
+            if state.is_running():
+                raise ProjectAlreadyRunningError(project_id)
 
-        def _worker() -> None:
-            result = runner.run(project_id, stop_requested=state.stop_event.is_set)
-            if state.cancel_requested and result.status == "paused":
-                repository.update_project(project_id, status="cancelled")
+            state.stop_event.clear()
+            state.cancel_requested = False
 
-        thread = threading.Thread(target=_worker, daemon=True)
-        state.thread = thread
-        thread.start()
+            def _worker() -> None:
+                result = runner.run(project_id, stop_requested=state.stop_event.is_set)
+                if state.cancel_requested and result.status == "paused":
+                    repository.update_project(project_id, status="cancelled")
+
+            thread = threading.Thread(target=_worker, daemon=True)
+            state.thread = thread
+            thread.start()
 
     def request_pause(self, project_id: str) -> None:
-        self._state(project_id).stop_event.set()
+        with self._lock:
+            self._get_or_create_locked(project_id).stop_event.set()
 
     def request_cancel(self, project_id: str) -> None:
-        state = self._state(project_id)
-        state.cancel_requested = True
-        state.stop_event.set()
+        with self._lock:
+            state = self._get_or_create_locked(project_id)
+            state.cancel_requested = True
+            state.stop_event.set()
 
     def join_all(self, timeout: Optional[float] = None) -> None:
         with self._lock:
@@ -177,13 +194,14 @@ def build_router(
     @router.post("/api/projects/{project_id}/start", status_code=202)
     def start_project(project_id: str) -> dict:
         project = _get_project_or_404(project_id)
-        if registry.is_running(project_id):
-            raise HTTPException(status_code=409, detail="project is already running")
         if project.status == "completed":
             raise HTTPException(status_code=409, detail="project already completed")
         if project.status == "cancelled":
             raise HTTPException(status_code=409, detail="project was cancelled")
-        registry.start(project_id, runner, repository)
+        try:
+            registry.start(project_id, runner, repository)
+        except ProjectAlreadyRunningError:
+            raise HTTPException(status_code=409, detail="project is already running")
         return _project_dict(repository.get_project(project_id))
 
     @router.post("/api/projects/{project_id}/pause", status_code=202)
@@ -222,8 +240,12 @@ def build_router(
     @router.get("/api/projects/{project_id}/download")
     def download_project(project_id: str):
         project = _get_project_or_404(project_id)
-        zip_path = projects_root / project.slug / "delivery" / "delivery.zip"
-        if not zip_path.is_file():
+        if project.status != "completed":
+            raise HTTPException(status_code=404, detail="delivery package not ready")
+        delivery_dir = projects_root / project.slug / "delivery"
+        zip_path = delivery_dir / "delivery.zip"
+        manifest_path = delivery_dir / "manifest.json"
+        if not zip_path.is_file() or not manifest_path.is_file():
             raise HTTPException(status_code=404, detail="delivery package not ready")
         safe_filename = f"{project.slug}-delivery.zip"
         return FileResponse(

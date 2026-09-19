@@ -41,6 +41,20 @@ def test_invalid_mode_is_rejected(repo):
         ProjectCreate(title="Bad", topic="X", mode="not-a-real-mode")
 
 
+def test_source_materials_at_max_length_is_accepted(repo):
+    materials = "x" * 50_000
+    created = repo.create_project(
+        ProjectCreate(title="Max source", topic="X", mode="guide", source_materials=materials)
+    )
+    assert created.source_materials == materials
+
+
+def test_source_materials_over_max_length_is_rejected():
+    materials = "x" * 50_001
+    with pytest.raises(ValueError):
+        ProjectCreate(title="Too long", topic="X", mode="guide", source_materials=materials)
+
+
 def test_project_has_ordered_stages_matching_pipeline_definition(repo):
     created = repo.create_project(ProjectCreate(title="Stages", topic="X", mode="lead-magnet"))
     stages = repo.list_stages(created.id)

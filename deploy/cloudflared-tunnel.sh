@@ -14,10 +14,12 @@ usage() {
 Usage: cloudflared-tunnel.sh [--port PORT] [--log-dir DIR] [--wait-seconds N]
 
 Starts a Cloudflare Quick Tunnel pointing at http://127.0.0.1:PORT using an
-installed `cloudflared` if found on PATH, ~/.local/bin or ~/bin, otherwise
-downloading the official binary into ~/.local/bin. Requires no account and
-no API token. Prints the public https://*.trycloudflare.com URL once
-cloudflared reports it, and writes a PID file and log file under --log-dir.
+installed `cloudflared` found on PATH, in ~/.local/bin or in ~/bin. This
+script never fetches a binary itself: if cloudflared is not already
+installed and verified by you, it exits with an error instead of running
+unverified, unattended code. Requires no account and no API token. Prints
+the public https://*.trycloudflare.com URL once cloudflared reports it, and
+writes a PID file and log file under --log-dir.
 USAGE
 }
 
@@ -63,29 +65,6 @@ find_cloudflared() {
   return 1
 }
 
-download_cloudflared() {
-  local dest="$HOME/.local/bin/cloudflared"
-  mkdir -p "$HOME/.local/bin"
-  local arch
-  arch="$(uname -m)"
-  local url
-  case "$arch" in
-    x86_64)
-      url="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64"
-      ;;
-    aarch64|arm64)
-      url="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64"
-      ;;
-    *)
-      echo "unsupported architecture for cloudflared: $arch" >&2
-      return 1
-      ;;
-  esac
-  curl -fsSL -o "$dest" "$url"
-  chmod +x "$dest"
-  echo "$dest"
-}
-
 mkdir -p "$LOG_DIR"
 PID_FILE="$LOG_DIR/cloudflared.pid"
 LOG_FILE="$LOG_DIR/cloudflared.log"
@@ -101,8 +80,8 @@ fi
 
 CLOUDFLARED_BIN="$(find_cloudflared || true)"
 if [[ -z "$CLOUDFLARED_BIN" ]]; then
-  echo "cloudflared not found locally, downloading..." >&2
-  CLOUDFLARED_BIN="$(download_cloudflared)"
+  echo "cloudflared not found on PATH, in \$HOME/.local/bin, or in \$HOME/bin. This script refuses to fetch and run an unverified binary automatically; install a verified cloudflared build yourself (see the official Cloudflare releases) and re-run." >&2
+  exit 1
 fi
 
 : > "$LOG_FILE"

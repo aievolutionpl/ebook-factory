@@ -9,15 +9,21 @@ HOST="127.0.0.1"
 PORT="8765"
 DATA_DIR="$REPO_ROOT/data"
 LOG_DIR="$REPO_ROOT/deploy/logs"
+ALLOW_NO_AUTH=0
 
 usage() {
   cat <<'USAGE'
-Usage: start-production.sh [--host HOST] [--port PORT] [--data-dir DIR] [--log-dir DIR]
+Usage: start-production.sh [--host HOST] [--port PORT] [--data-dir DIR] [--log-dir DIR] [--allow-no-auth]
 
 Starts the Ebook Factory FastAPI server in the background, bound to the
 given host/port, storing its SQLite database and project artifacts under
 --data-dir. Writes a PID file and log file under --log-dir and refuses to
 start a second instance while one is already running against that log dir.
+
+Requires EBOOK_FACTORY_AUTH_USER and EBOOK_FACTORY_AUTH_PASSWORD to be set
+in the environment so the UI, API and downloads are protected by HTTP Basic
+auth (the /health endpoint stays public). Pass --allow-no-auth to explicitly
+opt out for a local/open run.
 USAGE
 }
 
@@ -39,6 +45,10 @@ while [[ $# -gt 0 ]]; do
       LOG_DIR="$2"
       shift 2
       ;;
+    --allow-no-auth)
+      ALLOW_NO_AUTH=1
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -50,6 +60,13 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+if [[ "$ALLOW_NO_AUTH" -ne 1 ]]; then
+  if [[ -z "${EBOOK_FACTORY_AUTH_USER:-}" || -z "${EBOOK_FACTORY_AUTH_PASSWORD:-}" ]]; then
+    echo "refusing to start: no auth credentials configured. Set EBOOK_FACTORY_AUTH_USER and EBOOK_FACTORY_AUTH_PASSWORD, or pass --allow-no-auth for an explicit local/open run." >&2
+    exit 1
+  fi
+fi
 
 PYTHON_BIN="$REPO_ROOT/.venv/bin/python"
 if [[ ! -x "$PYTHON_BIN" ]]; then

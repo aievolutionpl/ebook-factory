@@ -23,6 +23,7 @@ from .artifacts import (
     build_pdf,
 )
 from .models import MODE_CONFIG, Project
+from .pdfcheck import check_pdf
 from .pipeline import StageResult
 
 CHAPTER_TEMPLATES = [
@@ -129,6 +130,12 @@ def strategy_stage(project: Project, project_dir: Path) -> StageResult:
         "Material demonstracyjny wygenerowany przez pipeline Ebook Factory — "
         "struktura i proces sa realne, tresc wymaga redakcji eksperckiej przed sprzedaza.\n"
     )
+    if project.source_materials:
+        content += (
+            "\n## Materialy zrodlowe\n"
+            "Strategia uwzglednia ponizsze materialy dostarczone przez uzytkownika:\n\n"
+            f"{project.source_materials}\n"
+        )
     path = project_dir / "outline" / "strategy.md"
     path.write_text(content, encoding="utf-8")
     return StageResult(True, "strategy captured", ["outline/strategy.md"])
@@ -147,6 +154,15 @@ def research_stage(project: Project, project_dir: Path) -> StageResult:
             f"{i}. [DEMO ZRODLO {i}] Materialy o „{project.topic}” — zastap prawdziwym "
             "linkiem, autorem i data publikacji przed uzyciem komercyjnym."
         )
+    if project.source_materials:
+        lines.append("")
+        lines.append("## Materialy zrodlowe dostarczone przez uzytkownika")
+        lines.append("")
+        lines.append(
+            "Research uwzglednia ponizsze materialy jako punkt wyjscia do dalszej weryfikacji:"
+        )
+        lines.append("")
+        lines.append(project.source_materials)
     path = project_dir / "research" / "notes.md"
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return StageResult(True, "research notes captured", ["research/notes.md"])
@@ -362,8 +378,14 @@ def qa_stage(project: Project, project_dir: Path) -> StageResult:
     checks: list[tuple[str, bool, str]] = []
 
     pdf_path = project_dir / "builds" / "book.pdf"
-    pdf_ok = pdf_path.exists() and pdf_path.read_bytes().startswith(b"%PDF")
-    checks.append(("PDF istnieje i zaczyna sie od naglowka %PDF", pdf_ok, ""))
+    pdf_check = check_pdf(pdf_path)
+    pdf_ok = pdf_check.page_count > 0 and pdf_check.has_text
+    checks.append((
+        "PDF ma strony i tekst mozliwy do wyekstrahowania",
+        pdf_ok,
+        f"stron={pdf_check.page_count}, tekst={'tak' if pdf_check.has_text else 'nie'}, "
+        f"metoda={pdf_check.method}",
+    ))
 
     epub_path = project_dir / "builds" / "book.epub"
     epub_ok = False
@@ -416,10 +438,10 @@ def qa_stage(project: Project, project_dir: Path) -> StageResult:
         lines.append(f"- [{status}] {label}{suffix}")
     lines.append("")
     if print_grade:
-        lines.append(f"PDF wygenerowany silnikiem **{engine}** — sklad gotowy do dalszej obrobki poligraficznej.")
+        lines.append(f"Plik ksiazki wygenerowany silnikiem **{engine}** — sklad gotowy do dalszej obrobki poligraficznej.")
     else:
         lines.append(
-            f"UWAGA: PDF wygenerowany silnikiem awaryjnym **{engine}** (stdlib fallback) — "
+            f"UWAGA: plik ksiazki wygenerowany silnikiem awaryjnym **{engine}** (stdlib fallback) — "
             "jakosc podstawowa, NIE nadaje sie bezposrednio do druku."
         )
     report_path = project_dir / "qa" / "qa-report.md"

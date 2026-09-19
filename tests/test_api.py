@@ -1,8 +1,11 @@
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 from fastapi.testclient import TestClient
 
+from ebook_factory.api import ProjectAlreadyRunningError, WorkerRegistry
 from ebook_factory.app import create_app
 
 
@@ -173,3 +176,112 @@ def test_download_after_completion_returns_zip_with_safe_filename(client):
 def test_download_unknown_project_returns_404(client):
     r = client.get("/api/projects/does-not-exist/download")
     assert r.status_code == 404
+
+
+def test_download_rejects_stale_zip_when_project_not_completed(client, tmp_path):
+    r = client.post("/api/projects", json={"title": "Stale zip", "topic": "T", "mode": "guide"})
+    pid = r.json()["id"]
+    slug = client.get(f"/api/projects/{pid}").json()["slug"]
+
+    # Simulate leftover/residue artifacts from a prior failed or duplicate run:
+    # a delivery.zip exists on disk even though the project never completed.
+    delivery_dir = tmp_path / "projects" / slug / "delivery"
+    delivery_dir.mkdir(parents=True)
+    (delivery_dir / "delivery.zip").write_bytes(b"PK\x03\x04stale")
+    (delivery_dir / "manifest.json").write_text("{}")
+
+    resp = client.get(f"/api/projects/{pid}/download")
+    assert resp.status_code == 404
+
+
+def test_create_project_rejects_source_materials_over_max_length(client):
+    r = client.post(
+        "/api/projects",
+        json={
+            "title": "Too long",
+            "topic": "T",
+            "mode": "guide",
+            "source_materials": "x" * 50_001,
+        },
+    )
+    assert r.status_code == 422
+
+
+def test_create_project_accepts_source_materials_at_max_length(client):
+    r = client.post(
+        "/api/projects",
+        json={
+            "title": "Just right",
+            "topic": "T",
+            "mode": "guide",
+            "source_materials": "x" * 50_000,
+        },
+    )
+    assert r.status_code == 201
+
+
+def test_worker_registry_start_is_atomic_under_concurrency():
+    starts = []
+    starts_lock = threading.Lock()
+    barrier = threading.Barrier(25)
+
+    class FakeResult:
+        status = "completed"
+
+    class FakeRunner:
+        def run(self, project_id, stop_requested=lambda: False):
+            with starts_lock:
+                starts.append(project_id)
+            time.sleep(0.05)
+            return FakeResult()
+
+    class FakeRepository:
+        def update_project(self, *args, **kwargs):
+            pass
+
+    registry = WorkerRegistry()
+    runner = FakeRunner()
+    repository = FakeRepository()
+    outcomes = []
+    outcomes_lock = threading.Lock()
+
+    def attempt_start():
+        barrier.wait()
+        try:
+            registry.start("shared-project", runner, repository)
+            outcome = "started"
+        except ProjectAlreadyRunningError:
+            outcome = "blocked"
+        with outcomes_lock:
+            outcomes.append(outcome)
+
+    threads = [threading.Thread(target=attempt_start) for _ in range(25)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=10)
+
+    registry.join_all(timeout=5)
+
+    assert outcomes.count("started") == 1
+    assert outcomes.count("blocked") == 24
+    assert len(starts) == 1
+
+
+def test_concurrent_start_requests_only_launch_one_worker(client):
+    r = client.post(
+        "/api/projects", json={"title": "Race condition", "topic": "T", "mode": "lead-magnet"}
+    )
+    pid = r.json()["id"]
+
+    def do_start():
+        return client.post(f"/api/projects/{pid}/start")
+
+    with ThreadPoolExecutor(max_workers=20) as pool:
+        responses = list(pool.map(lambda _: do_start(), range(20)))
+
+    statuses = [resp.status_code for resp in responses]
+    assert statuses.count(202) == 1, statuses
+    assert statuses.count(409) == 19, statuses
+
+    wait_for_status(client, pid, {"completed", "failed"}, timeout=60)

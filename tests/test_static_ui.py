@@ -106,6 +106,14 @@ def test_styles_define_breakpoints_for_required_viewports():
     assert "1150px" in css
 
 
+def test_index_has_source_materials_textarea_with_no_upload():
+    html = read("index.html")
+    assert re.search(r'<textarea[^>]*id=["\']field-source-materials["\']', html)
+    assert re.search(r'<textarea[^>]*maxlength=["\']50000["\']', html)
+    assert '<input type="file"' not in html
+    assert "type='file'" not in html
+
+
 def test_favicon_is_valid_svg():
     svg = read("favicon.svg")
     assert svg.strip().startswith("<svg") or "<?xml" in svg[:100]

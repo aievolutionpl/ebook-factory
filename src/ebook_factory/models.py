@@ -25,6 +25,7 @@ STAGE_STATUSES: tuple[str, ...] = (
     "skipped",
 )
 MAX_STAGE_ATTEMPTS = 3
+MAX_SOURCE_MATERIALS_CHARS = 50_000
 
 
 class StageDefinition(NamedTuple):
@@ -96,6 +97,10 @@ class ProjectCreate:
         if self.mode not in PROJECT_MODES:
             raise ValueError(
                 f"invalid mode {self.mode!r}; expected one of {PROJECT_MODES}"
+            )
+        if self.source_materials is not None and len(self.source_materials) > MAX_SOURCE_MATERIALS_CHARS:
+            raise ValueError(
+                f"source_materials must not exceed {MAX_SOURCE_MATERIALS_CHARS} characters"
             )
 
 
