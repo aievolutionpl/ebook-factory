@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ebook Factory — panel produkcji</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Przejdź do treści</a>
+
+  <div class="ai-disclosure" role="note">
+    Ten panel oraz generowane materiały powstają przy pomocy AI (pipeline demonstracyjny) —
+    treść wymaga redakcji eksperckiej przed sprzedażą.
+  </div>
+
+  <header class="app-header">
+    <span class="brand">Ebook Factory</span>
+    <button type="button" class="btn btn-primary" id="new-project-button">Nowy ebook</button>
+  </header>
+
+  <nav class="sidebar-nav" aria-label="Projekty" id="sidebar-nav">
+    <h2 class="eyebrow">Projekty</h2>
+    <div id="project-list" class="project-list" aria-live="polite">
+      <p class="empty-state">Ładowanie projektów…</p>
+    </div>
+  </nav>
+
+  <main id="main-content" class="detail-panel">
+    <section id="empty-detail" class="empty-state-panel">
+      <p>Wybierz projekt z listy lub utwórz nowy, aby zobaczyć szczegóły produkcji.</p>
+    </section>
+
+    <section id="project-detail" class="project-detail" hidden>
+      <div class="detail-header">
+        <button type="button" id="back-to-list" class="btn btn-tertiary mobile-only">← Projekty</button>
+        <div>
+          <p class="eyebrow" id="detail-mode"></p>
+          <h1 id="detail-title"></h1>
+          <p class="meta" id="detail-meta"></p>
+        </div>
+        <span class="status-chip" id="detail-status"></span>
+      </div>
+
+      <div class="progress-bar" role="progressbar" aria-label="Postęp produkcji" aria-valuemin="0" aria-valuemax="100" id="progress-bar">
+        <div class="progress-bar-fill" id="progress-bar-fill"></div>
+      </div>
+
+      <div class="detail-controls" id="detail-controls">
+        <button type="button" class="btn btn-primary" id="start-button">Start</button>
+        <button type="button" class="btn btn-secondary" id="pause-button">Pauza</button>
+        <button type="button" class="btn btn-secondary" id="resume-button">Wznów</button>
+        <button type="button" class="btn btn-danger" id="cancel-button">Anuluj</button>
+        <a class="btn btn-primary" id="download-link" href="#" hidden>Pobierz paczkę (ZIP)</a>
+      </div>
+
+      <p class="error-banner" id="error-banner" hidden></p>
+
+      <h2 class="eyebrow">Etapy produkcji</h2>
+      <ol class="stage-timeline" id="stage-timeline" aria-label="Etapy produkcji"></ol>
+
+      <h2 class="eyebrow">Log zdarzeń</h2>
+      <ul class="events-log" id="events-log" aria-label="Log zdarzeń"></ul>
+    </section>
+  </main>
+
+  <nav class="bottom-nav" aria-label="Nawigacja mobilna">
+    <button type="button" class="bottom-nav-item" data-nav="list">Projekty</button>
+    <button type="button" class="bottom-nav-item" data-nav="new">Nowy ebook</button>
+  </nav>
+
+  <footer class="app-footer">
+    <p>Ebook Factory MVP — panel prywatny. Bez autopublikacji i płatności.</p>
+  </footer>
+
+  <dialog id="new-project-dialog" class="dialog">
+    <form id="new-project-form" method="dialog">
+      <h2>Nowy ebook</h2>
+
+      <div class="field">
+        <label for="field-title">Tytuł</label>
+        <input type="text" id="field-title" name="title" required minlength="1">
+      </div>
+
+      <div class="field">
+        <label for="field-topic">Temat</label>
+        <input type="text" id="field-topic" name="topic" required minlength="1">
+      </div>
+
+      <div class="field">
+        <label for="field-mode">Tryb</label>
+        <select id="field-mode" name="mode" required>
+          <option value="lead-magnet">Lead magnet (15–30 stron)</option>
+          <option value="guide" selected>Poradnik ekspercki (40–100 stron)</option>
+          <option value="premium">Książka premium (150–300 stron)</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="field-language">Język</label>
+        <input type="text" id="field-language" name="language" value="pl">
+      </div>
+
+      <div class="field">
+        <label for="field-audience">Odbiorca</label>
+        <input type="text" id="field-audience" name="audience" placeholder="np. właściciele małych firm">
+      </div>
+
+      <div class="field">
+        <label for="field-brand">Marka</label>
+        <input type="text" id="field-brand" name="brand" placeholder="np. Ebook Factory Demo">
+      </div>
+
+      <div class="field">
+        <label for="field-tone">Ton</label>
+        <input type="text" id="field-tone" name="tone" placeholder="np. rzeczowy">
+      </div>
+
+      <p class="form-error" id="form-error" hidden></p>
+
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-secondary" id="cancel-new-project">Anuluj</button>
+        <button type="submit" class="btn btn-primary" id="submit-new-project">Utwórz projekt</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>
