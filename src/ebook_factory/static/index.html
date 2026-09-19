@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Ebook Factory — panel produkcji</title>
+  <title>Ebook Factory — workspace produkcji</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <link rel="stylesheet" href="styles.css">
 </head>
@@ -11,130 +11,229 @@
   <a class="skip-link" href="#main-content">Przejdź do treści</a>
 
   <div class="ai-disclosure" role="note">
-    Ten panel oraz generowane materiały powstają przy pomocy AI (pipeline demonstracyjny) —
-    treść wymaga redakcji eksperckiej przed sprzedażą.
+    AI-assisted demo pipeline: generowane materiały wymagają redakcji eksperckiej i kontroli źródeł przed sprzedażą.
   </div>
 
   <header class="app-header">
-    <span class="brand">Ebook Factory</span>
-    <button type="button" class="btn btn-primary" id="new-project-button">Nowy ebook</button>
+    <div>
+      <span class="brand">Ebook Factory</span>
+      <span class="header-context">Workspace Codex</span>
+    </div>
+    <div class="header-actions">
+      <button type="button" class="btn btn-secondary" id="palette-open-button" aria-haspopup="dialog">Ctrl K</button>
+      <button type="button" class="btn btn-primary" id="new-project-button">+ Nowy ebook</button>
+    </div>
   </header>
 
-  <nav class="sidebar-nav" aria-label="Projekty" id="sidebar-nav">
-    <h2 class="eyebrow">Projekty</h2>
-    <div id="project-list" class="project-list" aria-live="polite">
-      <p class="empty-state">Ładowanie projektów…</p>
-    </div>
-  </nav>
-
-  <main id="main-content" class="detail-panel">
-    <section id="empty-detail" class="empty-state-panel">
-      <p>Wybierz projekt z listy lub utwórz nowy, aby zobaczyć szczegóły produkcji.</p>
-    </section>
-
-    <section id="project-detail" class="project-detail" hidden>
-      <div class="detail-header">
-        <button type="button" id="back-to-list" class="btn btn-tertiary mobile-only">← Projekty</button>
-        <div>
-          <p class="eyebrow" id="detail-mode"></p>
-          <h1 id="detail-title"></h1>
-          <p class="meta" id="detail-meta"></p>
+  <div class="workspace-shell">
+    <button type="button" class="project-drawer-backdrop" id="project-drawer-backdrop" aria-label="Zamknij projekty" hidden></button>
+    <nav class="project-rail" aria-label="Projekty" id="sidebar-nav">
+      <div class="rail-header">
+        <h2>Projekty</h2>
+        <span class="rail-count" id="project-count">0</span>
+      </div>
+      <button type="button" class="btn btn-primary btn-block rail-new-project" id="rail-new-project-button">+ Nowy ebook</button>
+      <div class="field field-compact">
+        <label for="project-search">Szukaj</label>
+        <input type="search" id="project-search" autocomplete="off" placeholder="Tytuł, temat, status">
+      </div>
+      <div class="status-filters" aria-label="Filtry statusu">
+        <button type="button" class="filter-chip is-active" data-status-filter="all">Wszystkie</button>
+        <button type="button" class="filter-chip" data-status-filter="draft">Szkic</button>
+        <button type="button" class="filter-chip" data-status-filter="running">W trakcie</button>
+        <button type="button" class="filter-chip" data-status-filter="paused">Wstrzymane</button>
+        <button type="button" class="filter-chip" data-status-filter="completed">Gotowe</button>
+        <button type="button" class="filter-chip" data-status-filter="failed">Błąd</button>
+        <button type="button" class="filter-chip" data-status-filter="cancelled">Anulowane</button>
+      </div>
+      <div id="project-list" class="project-list" aria-live="polite">
+        <div class="skeleton-list" aria-label="Ładowanie projektów">
+          <span class="skeleton"></span>
+          <span class="skeleton"></span>
+          <span class="skeleton"></span>
         </div>
-        <span class="status-chip" id="detail-status"></span>
       </div>
+    </nav>
 
-      <div class="progress-bar" role="progressbar" aria-label="Postęp produkcji" aria-valuemin="0" aria-valuemax="100" id="progress-bar">
-        <div class="progress-bar-fill" id="progress-bar-fill"></div>
+    <main id="main-content" class="workspace-panel">
+      <section id="empty-detail" class="empty-state-panel">
+        <p class="eyebrow">Brak aktywnego projektu</p>
+        <h1>Wybierz projekt albo utwórz nowy ebook.</h1>
+        <p>Workspace pokaże proces, pliki, aktywność, źródła i wyniki po wybraniu projektu.</p>
+        <button type="button" class="btn btn-primary" id="empty-new-project-button">+ Nowy ebook</button>
+      </section>
+
+      <section id="project-detail" class="project-detail" hidden>
+        <div class="workspace-header">
+          <button type="button" id="back-to-list" class="btn btn-tertiary mobile-only" aria-controls="sidebar-nav">Projekty</button>
+          <div class="workspace-title-block">
+            <p class="eyebrow" id="detail-mode"></p>
+            <h1 id="detail-title"></h1>
+            <p class="meta" id="detail-meta"></p>
+          </div>
+          <span class="status-chip" id="detail-status"></span>
+          <button type="button" class="btn btn-primary contextual-action" id="workspace-primary-action">Start</button>
+        </div>
+
+        <div class="progress-cluster">
+          <div class="progress-copy">
+            <span id="workspace-progress-label">0% ukończono</span>
+            <span id="workspace-stage-label">Oczekuje na start</span>
+          </div>
+          <div class="progress-bar" role="progressbar" aria-label="Postęp produkcji" aria-valuemin="0" aria-valuemax="100" id="progress-bar">
+            <div class="progress-bar-fill" id="progress-bar-fill"></div>
+          </div>
+        </div>
+
+        <p class="error-banner" id="error-banner" hidden></p>
+
+        <div class="tabbar" role="tablist" aria-label="Widoki projektu">
+          <button type="button" role="tab" aria-selected="true" aria-controls="panel-workflow" id="tab-workflow" class="tab is-active" data-tab="workflow">Proces</button>
+          <button type="button" role="tab" aria-selected="false" aria-controls="panel-files" id="tab-files" class="tab" data-tab="files">Pliki</button>
+          <button type="button" role="tab" aria-selected="false" aria-controls="panel-activity" id="tab-activity" class="tab" data-tab="activity">Aktywność</button>
+        </div>
+
+        <section id="panel-workflow" role="tabpanel" aria-labelledby="tab-workflow" class="tab-panel">
+          <ol class="stage-timeline" id="stage-timeline" aria-label="Etapy produkcji"></ol>
+        </section>
+        <section id="panel-files" role="tabpanel" aria-labelledby="tab-files" class="tab-panel" hidden>
+          <div class="file-grid" id="workspace-files"></div>
+        </section>
+        <section id="panel-activity" role="tabpanel" aria-labelledby="tab-activity" class="tab-panel" hidden>
+          <ul class="events-log" id="events-log" aria-label="Log zdarzeń"></ul>
+        </section>
+      </section>
+    </main>
+
+    <aside class="inspector-panel" aria-label="Inspektor projektu" id="inspector-panel" hidden>
+      <button type="button" class="sheet-handle" id="inspector-sheet-toggle" aria-expanded="false" aria-controls="inspector-body">Inspektor</button>
+      <div id="inspector-body" class="inspector-body">
+        <section>
+          <h2>Wyniki</h2>
+          <ul id="inspector-outputs" class="inspector-list"></ul>
+          <a class="btn btn-primary btn-block" id="inspector-download-link" href="#" hidden>Pobierz ZIP</a>
+        </section>
+        <section>
+          <h2>Źródła</h2>
+          <ul id="inspector-sources" class="inspector-list"></ul>
+        </section>
+        <section>
+          <h2>Ostatnia aktywność</h2>
+          <ul id="inspector-activity" class="inspector-list"></ul>
+        </section>
       </div>
+    </aside>
+  </div>
 
-      <div class="detail-controls" id="detail-controls">
-        <button type="button" class="btn btn-primary" id="start-button">Start</button>
-        <button type="button" class="btn btn-secondary" id="pause-button">Pauza</button>
-        <button type="button" class="btn btn-secondary" id="resume-button">Wznów</button>
-        <button type="button" class="btn btn-danger" id="cancel-button">Anuluj</button>
-        <a class="btn btn-primary" id="download-link" href="#" hidden>Pobierz paczkę (ZIP)</a>
-      </div>
+  <form id="command-composer" class="command-composer" aria-label="Szybkie komendy projektu">
+    <div class="composer-prompt">/</div>
+    <button type="button" class="composer-command" data-command="start">uruchom</button>
+    <button type="button" class="composer-command" data-command="pause">wstrzymaj</button>
+    <button type="button" class="composer-command" data-command="resume">wznów</button>
+    <button type="button" class="composer-command" data-command="cancel">anuluj</button>
+    <button type="button" class="composer-command" data-command="download">pobierz</button>
+  </form>
 
-      <p class="error-banner" id="error-banner" hidden></p>
-
-      <h2 class="eyebrow">Etapy produkcji</h2>
-      <ol class="stage-timeline" id="stage-timeline" aria-label="Etapy produkcji"></ol>
-
-      <h2 class="eyebrow">Log zdarzeń</h2>
-      <ul class="events-log" id="events-log" aria-label="Log zdarzeń"></ul>
-    </section>
-  </main>
+  <button type="button" class="btn btn-primary mobile-sticky-action" id="mobile-primary-action" hidden>Start</button>
 
   <nav class="bottom-nav" aria-label="Nawigacja mobilna">
-    <button type="button" class="bottom-nav-item" data-nav="list">Projekty</button>
-    <button type="button" class="bottom-nav-item" data-nav="new">Nowy ebook</button>
+    <button type="button" class="bottom-nav-item" data-nav="list" aria-controls="sidebar-nav">Projekty</button>
+    <button type="button" class="bottom-nav-item" data-nav="inspector">Inspektor</button>
+    <button type="button" class="bottom-nav-item" data-nav="new">Nowy</button>
   </nav>
 
   <footer class="app-footer">
     <p>Ebook Factory MVP — panel prywatny. Bez autopublikacji i płatności.</p>
   </footer>
 
-  <dialog id="new-project-dialog" class="dialog">
+  <dialog id="command-palette" class="palette-dialog" role="dialog" aria-modal="true" aria-labelledby="command-palette-title">
+    <div class="palette-box">
+      <h2 id="command-palette-title">Paleta komend</h2>
+      <label class="sr-only" for="command-palette-input">Komenda</label>
+      <input type="search" id="command-palette-input" aria-controls="command-palette-list" aria-activedescendant="palette-command-start" autocomplete="off" placeholder="Wpisz komendę">
+      <ul id="command-palette-list" class="palette-list" role="listbox" aria-label="Komendy"></ul>
+    </div>
+  </dialog>
+
+  <dialog id="new-project-dialog" class="dialog" aria-labelledby="new-project-title">
     <form id="new-project-form" method="dialog">
-      <h2>Nowy ebook</h2>
-
-      <div class="field">
-        <label for="field-title">Tytuł</label>
-        <input type="text" id="field-title" name="title" required minlength="1">
+      <div class="wizard-header">
+        <p class="eyebrow">Nowy projekt</p>
+        <h2 id="new-project-title">Zbuduj pakiet ebooka</h2>
+        <p id="wizard-status" aria-live="polite">Krok 1 z 3: Cel i format</p>
       </div>
 
-      <div class="field">
-        <label for="field-topic">Temat</label>
-        <input type="text" id="field-topic" name="topic" required minlength="1">
-      </div>
+      <section class="wizard-step" id="wizard-step-goal" data-step="0">
+        <div class="preset-grid" aria-label="Presety">
+          <button type="button" class="preset-card" data-preset="lead-magnet">Lead magnet<span>Szybki materiał do pozyskania leadów</span></button>
+          <button type="button" class="preset-card is-selected" data-preset="guide">Poradnik<span>Praktyczna książka ekspercka</span></button>
+          <button type="button" class="preset-card" data-preset="premium">Premium<span>Długi produkt wydawniczy</span></button>
+        </div>
+        <div class="field">
+          <label for="field-title">Tytuł</label>
+          <input type="text" id="field-title" name="title" required minlength="1">
+        </div>
+        <div class="field">
+          <label for="field-topic">Temat</label>
+          <input type="text" id="field-topic" name="topic" required minlength="1">
+        </div>
+        <div class="field">
+          <label for="field-mode">Tryb</label>
+          <select id="field-mode" name="mode" required>
+            <option value="lead-magnet">Lead magnet (15-30 stron)</option>
+            <option value="guide" selected>Poradnik ekspercki (40-100 stron)</option>
+            <option value="premium">Książka premium (150-300 stron)</option>
+          </select>
+        </div>
+      </section>
 
-      <div class="field">
-        <label for="field-mode">Tryb</label>
-        <select id="field-mode" name="mode" required>
-          <option value="lead-magnet">Lead magnet (15–30 stron)</option>
-          <option value="guide" selected>Poradnik ekspercki (40–100 stron)</option>
-          <option value="premium">Książka premium (150–300 stron)</option>
-        </select>
-      </div>
+      <section class="wizard-step" id="wizard-step-brand" data-step="1" hidden>
+        <div class="field">
+          <label for="field-language">Język</label>
+          <input type="text" id="field-language" name="language" value="pl">
+        </div>
+        <div class="field">
+          <label for="field-audience">Odbiorca</label>
+          <input type="text" id="field-audience" name="audience" placeholder="np. właściciele małych firm">
+        </div>
+        <div class="field">
+          <label for="field-brand">Marka</label>
+          <input type="text" id="field-brand" name="brand" placeholder="np. Ebook Factory Demo">
+        </div>
+        <div class="field">
+          <label for="field-tone">Ton</label>
+          <input type="text" id="field-tone" name="tone" placeholder="np. rzeczowy">
+        </div>
+      </section>
 
-      <div class="field">
-        <label for="field-language">Język</label>
-        <input type="text" id="field-language" name="language" value="pl">
-      </div>
+      <section class="wizard-step" id="wizard-step-sources" data-step="2" hidden>
+        <div class="field">
+          <label for="field-source-materials">Materiały źródłowe (opcjonalnie, max 50000 znaków)</label>
+          <textarea id="field-source-materials" name="source_materials" maxlength="50000" rows="6" placeholder="Wklej notatki, fakty lub źródła do wykorzystania w strategii i researchu"></textarea>
+        </div>
+        <div class="field">
+          <label for="field-source-files">Pliki źródłowe (opcjonalnie, .txt/.md/.pdf, max 5 MB, max 5 plików)</label>
+          <input type="file" id="field-source-files" name="source_files" accept=".txt,.md,.pdf" multiple>
+        </div>
+      </section>
 
-      <div class="field">
-        <label for="field-audience">Odbiorca</label>
-        <input type="text" id="field-audience" name="audience" placeholder="np. właściciele małych firm">
-      </div>
-
-      <div class="field">
-        <label for="field-brand">Marka</label>
-        <input type="text" id="field-brand" name="brand" placeholder="np. Ebook Factory Demo">
-      </div>
-
-      <div class="field">
-        <label for="field-tone">Ton</label>
-        <input type="text" id="field-tone" name="tone" placeholder="np. rzeczowy">
-      </div>
-
-      <div class="field">
-        <label for="field-source-materials">Materiały źródłowe (opcjonalnie, max 50000 znaków)</label>
-        <textarea id="field-source-materials" name="source_materials" maxlength="50000" rows="6" placeholder="Wklej notatki, fakty lub źródła do wykorzystania w strategii i researchu"></textarea>
-      </div>
-
-      <div class="field">
-        <label for="field-source-files">Pliki źródłowe (opcjonalnie, .txt/.md/.pdf, max 5 MB, max 5 plików)</label>
-        <input type="file" id="field-source-files" name="source_files" accept=".txt,.md,.pdf" multiple>
-      </div>
+      <section class="wizard-step review-step" id="wizard-step-review" data-step="3" hidden>
+        <h3>Sprawdź przed wysłaniem</h3>
+        <dl id="wizard-review" class="review-list"></dl>
+      </section>
 
       <p class="form-error" id="form-error" hidden></p>
 
       <div class="dialog-actions">
         <button type="button" class="btn btn-secondary" id="cancel-new-project">Anuluj</button>
-        <button type="submit" class="btn btn-primary" id="submit-new-project">Utwórz projekt</button>
+        <button type="button" class="btn btn-secondary" id="wizard-back">Wstecz</button>
+        <button type="button" class="btn btn-primary" id="wizard-next">Dalej</button>
+        <button type="submit" class="btn btn-primary" id="submit-new-project" hidden>Utwórz projekt</button>
       </div>
     </form>
   </dialog>
+
+  <div class="toast-region" id="toast-region" aria-live="polite" aria-atomic="true"></div>
 
   <script src="app.js"></script>
 </body>

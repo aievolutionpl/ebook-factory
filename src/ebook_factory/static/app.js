@@ -4,11 +4,25 @@
   var state = {
     projects: [],
     selectedId: null,
+    selectedProject: null,
+    events: [],
     pollTimer: null,
+    statusFilter: 'all',
+    searchQuery: '',
+    activeTab: 'workflow',
+    wizardStep: 0,
+    paletteIndex: 0,
+    palettePreviousFocus: null,
+    projectDrawerOpen: false,
   };
 
   var el = {
     projectList: document.getElementById('project-list'),
+    projectRail: document.getElementById('sidebar-nav'),
+    projectDrawerBackdrop: document.getElementById('project-drawer-backdrop'),
+    projectCount: document.getElementById('project-count'),
+    projectSearch: document.getElementById('project-search'),
+    statusFilters: document.querySelectorAll('[data-status-filter]'),
     emptyDetail: document.getElementById('empty-detail'),
     projectDetail: document.getElementById('project-detail'),
     detailTitle: document.getElementById('detail-title'),
@@ -17,15 +31,23 @@
     detailStatus: document.getElementById('detail-status'),
     progressFill: document.getElementById('progress-bar-fill'),
     progressBar: document.getElementById('progress-bar'),
-    startButton: document.getElementById('start-button'),
-    pauseButton: document.getElementById('pause-button'),
-    resumeButton: document.getElementById('resume-button'),
-    cancelButton: document.getElementById('cancel-button'),
-    downloadLink: document.getElementById('download-link'),
+    progressLabel: document.getElementById('workspace-progress-label'),
+    stageLabel: document.getElementById('workspace-stage-label'),
+    workspacePrimaryAction: document.getElementById('workspace-primary-action'),
+    mobilePrimaryAction: document.getElementById('mobile-primary-action'),
     errorBanner: document.getElementById('error-banner'),
     stageTimeline: document.getElementById('stage-timeline'),
     eventsLog: document.getElementById('events-log'),
+    workspaceFiles: document.getElementById('workspace-files'),
+    inspectorPanel: document.getElementById('inspector-panel'),
+    inspectorToggle: document.getElementById('inspector-sheet-toggle'),
+    inspectorOutputs: document.getElementById('inspector-outputs'),
+    inspectorSources: document.getElementById('inspector-sources'),
+    inspectorActivity: document.getElementById('inspector-activity'),
+    inspectorDownloadLink: document.getElementById('inspector-download-link'),
     newProjectButton: document.getElementById('new-project-button'),
+    railNewProjectButton: document.getElementById('rail-new-project-button'),
+    emptyNewProjectButton: document.getElementById('empty-new-project-button'),
     newProjectDialog: document.getElementById('new-project-dialog'),
     newProjectForm: document.getElementById('new-project-form'),
     cancelNewProject: document.getElementById('cancel-new-project'),
@@ -33,6 +55,24 @@
     sourceFilesInput: document.getElementById('field-source-files'),
     backToList: document.getElementById('back-to-list'),
     bottomNavButtons: document.querySelectorAll('.bottom-nav-item'),
+    bottomInspectorButton: document.querySelector('[data-nav="inspector"]'),
+    tabButtons: document.querySelectorAll('[role="tab"][data-tab]'),
+    tabPanels: document.querySelectorAll('[role="tabpanel"]'),
+    composer: document.getElementById('command-composer'),
+    composerCommands: document.querySelectorAll('[data-command]'),
+    paletteOpenButton: document.getElementById('palette-open-button'),
+    commandPalette: document.getElementById('command-palette'),
+    paletteInput: document.getElementById('command-palette-input'),
+    paletteList: document.getElementById('command-palette-list'),
+    wizardSteps: document.querySelectorAll('.wizard-step'),
+    wizardStatus: document.getElementById('wizard-status'),
+    wizardBack: document.getElementById('wizard-back'),
+    wizardNext: document.getElementById('wizard-next'),
+    wizardReview: document.getElementById('wizard-review'),
+    submitNewProject: document.getElementById('submit-new-project'),
+    presetButtons: document.querySelectorAll('[data-preset]'),
+    fieldMode: document.getElementById('field-mode'),
+    toastRegion: document.getElementById('toast-region'),
   };
 
   var MODE_LABELS = {
@@ -44,11 +84,27 @@
   var STATUS_LABELS = {
     draft: 'Szkic',
     running: 'W trakcie',
-    paused: 'Wstrzymano',
-    completed: 'Ukończono',
+    paused: 'Wstrzymane',
+    completed: 'Gotowe',
     failed: 'Błąd',
-    cancelled: 'Anulowano',
+    cancelled: 'Anulowane',
   };
+
+  var COMMAND_LABELS = {
+    start: 'Start',
+    pause: 'Wstrzymaj',
+    resume: 'Wznów',
+    cancel: 'Anuluj',
+    download: 'Pobierz',
+  };
+
+  var COMMANDS = [
+    { id: 'start', label: 'Uruchom projekt', hint: 'POST /start' },
+    { id: 'pause', label: 'Wstrzymaj po bieżącym etapie', hint: 'POST /pause' },
+    { id: 'resume', label: 'Wznów projekt', hint: 'POST /resume' },
+    { id: 'cancel', label: 'Anuluj projekt', hint: 'POST /cancel' },
+    { id: 'download', label: 'Pobierz paczkę ZIP', hint: 'GET /download' },
+  ];
 
   function escapeHtml(value) {
     var div = document.createElement('div');
@@ -73,11 +129,59 @@
     return response;
   }
 
+  function showToast(message) {
+    var toast = document.createElement('p');
+    toast.className = 'toast';
+    toast.textContent = message;
+    el.toastRegion.appendChild(toast);
+    window.setTimeout(function () {
+      toast.remove();
+    }, 3200);
+  }
+
   async function checkHealth() {
     try {
       await apiFetch('/health');
     } catch (err) {
-      console.error('Health check failed', err);
+      showToast('Kontrola stanu nie powiodła się: ' + err.message);
+    }
+  }
+
+  function isMobileViewport() {
+    return window.matchMedia('(max-width: 767px)').matches;
+  }
+
+  function openProjectDrawer() {
+    state.projectDrawerOpen = true;
+    el.projectRail.classList.add('is-open');
+    el.projectRail.setAttribute('aria-modal', isMobileViewport() ? 'true' : 'false');
+    el.projectDrawerBackdrop.hidden = !isMobileViewport();
+  }
+
+  function closeProjectDrawer() {
+    state.projectDrawerOpen = false;
+    el.projectRail.classList.remove('is-open');
+    el.projectRail.setAttribute('aria-modal', 'false');
+    el.projectDrawerBackdrop.hidden = true;
+  }
+
+  function setInspectorOpen(open) {
+    el.inspectorPanel.classList.toggle('is-open', open);
+    el.inspectorToggle.setAttribute('aria-expanded', String(open));
+  }
+
+  function updateMobileChrome() {
+    var hasProject = Boolean(state.selectedId && state.selectedProject);
+    document.body.classList.toggle('has-selected-project', hasProject);
+    document.body.classList.toggle('has-no-selected-project', !hasProject);
+    el.mobilePrimaryAction.hidden = !hasProject;
+    el.inspectorPanel.hidden = !hasProject;
+    if (el.bottomInspectorButton) el.bottomInspectorButton.disabled = !hasProject;
+    if (!hasProject) {
+      setInspectorOpen(false);
+      if (isMobileViewport()) openProjectDrawer();
+    } else if (isMobileViewport()) {
+      closeProjectDrawer();
     }
   }
 
@@ -92,20 +196,36 @@
     }
   }
 
+  function filteredProjects() {
+    var query = state.searchQuery.trim().toLowerCase();
+    return state.projects.filter(function (project) {
+      var matchesStatus = state.statusFilter === 'all' || project.status === state.statusFilter;
+      var haystack = [project.title, project.topic, project.status, project.mode].join(' ').toLowerCase();
+      return matchesStatus && (!query || haystack.indexOf(query) !== -1);
+    });
+  }
+
   function renderProjectList() {
+    var projects = filteredProjects();
+    el.projectCount.textContent = String(projects.length);
     if (state.projects.length === 0) {
       el.projectList.innerHTML = '<p class="empty-state">Brak projektów. Utwórz pierwszy ebook.</p>';
       return;
     }
+    if (projects.length === 0) {
+      el.projectList.innerHTML = '<p class="empty-state">Brak projektów dla tego filtra.</p>';
+      return;
+    }
     el.projectList.innerHTML = '';
-    state.projects.forEach(function (project) {
+    projects.forEach(function (project) {
       var button = document.createElement('button');
       button.type = 'button';
       button.className = 'project-card' + (project.id === state.selectedId ? ' is-selected' : '');
       button.innerHTML =
-        '<p class="project-card-title">' + escapeHtml(project.title) + '</p>' +
-        '<p class="project-card-meta">' + escapeHtml(MODE_LABELS[project.mode] || project.mode) +
-        ' · ' + project.progress + '%</p>' +
+        '<span class="project-card-kicker">' + escapeHtml(project.slug || project.id.slice(0, 8)) + '</span>' +
+        '<span class="project-card-title">' + escapeHtml(project.title) + '</span>' +
+        '<span class="project-card-meta">' + escapeHtml(MODE_LABELS[project.mode] || project.mode) +
+        ' · ' + project.progress + '%</span>' +
         '<span class="status-chip" data-status="' + project.status + '">' +
         escapeHtml(STATUS_LABELS[project.status] || project.status) + '</span>';
       button.addEventListener('click', function () {
@@ -121,6 +241,7 @@
     el.projectDetail.hidden = false;
     renderProjectList();
     await refreshDetail();
+    closeProjectDrawer();
     startPolling();
   }
 
@@ -129,16 +250,37 @@
     try {
       var response = await apiFetch('/api/projects/' + state.selectedId);
       var project = await response.json();
+      state.selectedProject = project;
       renderDetail(project);
       var eventsResponse = await apiFetch('/api/projects/' + state.selectedId + '/events');
-      renderEvents(await eventsResponse.json());
+      state.events = await eventsResponse.json();
+      renderEvents(state.events);
+      renderInspector(project, state.events);
     } catch (err) {
       el.errorBanner.hidden = false;
       el.errorBanner.textContent = 'Błąd wczytywania projektu: ' + err.message;
     }
   }
 
+  function currentStage(project) {
+    var stages = project.stages || [];
+    return stages.find(function (stage) { return stage.status === 'running'; }) ||
+      stages.find(function (stage) { return stage.status !== 'completed'; }) ||
+      stages[stages.length - 1];
+  }
+
+  function primaryCommandFor(project) {
+    if (!project) return 'start';
+    if (project.status === 'running') return 'pause';
+    if (project.status === 'paused') return 'resume';
+    if (project.status === 'completed') return 'download';
+    if (project.status === 'cancelled') return 'download';
+    return 'start';
+  }
+
   function renderDetail(project) {
+    var stage = currentStage(project);
+    var command = primaryCommandFor(project);
     el.detailTitle.textContent = project.title;
     el.detailMode.textContent = MODE_LABELS[project.mode] || project.mode;
     el.detailMeta.textContent = project.topic + ' · ' + (project.audience || 'odbiorca nieokreślony');
@@ -146,50 +288,80 @@
     el.detailStatus.textContent = STATUS_LABELS[project.status] || project.status;
     el.progressFill.style.transform = 'scaleX(' + (project.progress / 100) + ')';
     el.progressBar.setAttribute('aria-valuenow', String(project.progress));
+    el.progressLabel.textContent = project.progress + '% ukończono';
+    el.stageLabel.textContent = stage ? stage.name : 'Oczekuje na start';
+    el.workspacePrimaryAction.textContent = COMMAND_LABELS[command] || command;
+    el.workspacePrimaryAction.dataset.command = command;
+    el.mobilePrimaryAction.textContent = COMMAND_LABELS[command] || command;
+    el.mobilePrimaryAction.dataset.command = command;
 
     el.errorBanner.hidden = !project.error;
     el.errorBanner.textContent = project.error ? 'Błąd: ' + project.error : '';
 
-    var isRunning = project.status === 'running';
-    var isPaused = project.status === 'paused';
-    var isDraft = project.status === 'draft';
-    var isFailed = project.status === 'failed';
-    var isTerminal = project.status === 'completed' || project.status === 'cancelled';
-
-    el.startButton.disabled = !(isDraft || isFailed);
-    el.pauseButton.disabled = !isRunning;
-    el.resumeButton.disabled = !isPaused;
-    el.cancelButton.disabled = isTerminal;
-
-    if (project.status === 'completed') {
-      el.downloadLink.hidden = false;
-      el.downloadLink.href = '/api/projects/' + project.id + '/download';
-    } else {
-      el.downloadLink.hidden = true;
-    }
-
     renderStages(project.stages || []);
+    renderFiles(project);
+    updateMobileChrome();
   }
 
   function mapStageStatus(status) {
     if (status === 'completed') return 'completed';
     if (status === 'running') return 'running';
     if (status === 'failed') return 'failed';
+    if (status === 'paused') return 'paused';
     return 'draft';
   }
 
   function renderStages(stages) {
+    if (stages.length === 0) {
+      el.stageTimeline.innerHTML = '<li class="empty-state">Etapy procesu pojawią się tutaj.</li>';
+      return;
+    }
     el.stageTimeline.innerHTML = '';
     stages.forEach(function (stage, index) {
       var item = document.createElement('li');
       item.className = 'stage-item';
       item.innerHTML =
-        '<span class="stage-index">' + (index + 1) + '</span>' +
+        '<span class="stage-index">' + String(index + 1).padStart(2, '0') + '</span>' +
         '<span class="stage-name">' + escapeHtml(stage.name) + '</span>' +
         '<span class="status-chip" data-status="' + mapStageStatus(stage.status) + '">' +
-        escapeHtml(stage.status) + '</span>';
+        escapeHtml(STATUS_LABELS[mapStageStatus(stage.status)] || stage.status) + '</span>';
       el.stageTimeline.appendChild(item);
     });
+  }
+
+  function renderFiles(project) {
+    var outputs = outputItems(project);
+    var sources = sourceItems(project);
+    var items = outputs.concat(sources);
+    if (items.length === 0) {
+      el.workspaceFiles.innerHTML = '<p class="empty-state">Nie ma jeszcze dostępnych plików.</p>';
+      return;
+    }
+    el.workspaceFiles.innerHTML = items.map(function (item) {
+      return '<div class="file-row"><span>' + escapeHtml(item.name) + '</span><span>' +
+        escapeHtml(item.meta) + '</span></div>';
+    }).join('');
+  }
+
+  function outputItems(project) {
+    if (!project || project.status !== 'completed') {
+      return [{ name: 'Paczka ZIP', meta: 'Dostępna po ukończeniu' }];
+    }
+    return [
+      { name: 'book.pdf', meta: 'Wynik budowania' },
+      { name: 'book.epub', meta: 'Wynik budowania' },
+      { name: 'cover.png', meta: 'Wynik projektu' },
+      { name: 'marketing pack', meta: 'Oferta, landing, posty, reklamy' },
+      { name: 'delivery.zip', meta: 'Gotowe' },
+    ];
+  }
+
+  function sourceItems(project) {
+    var hasMaterials = Boolean(project && project.source_materials);
+    return [
+      { name: 'Wklejone materiały źródłowe', meta: hasMaterials ? 'Dołączone' : 'Brak wklejonych materiałów' },
+      { name: 'Przesłane pliki', meta: 'Zapisane przez istniejące API uploadu' },
+    ];
   }
 
   function renderEvents(events) {
@@ -202,6 +374,38 @@
       var item = document.createElement('li');
       item.textContent = '[' + event.level + '] ' + event.message;
       el.eventsLog.appendChild(item);
+    });
+  }
+
+  function renderInspector(project, events) {
+    el.inspectorOutputs.innerHTML = outputItems(project).map(function (item) {
+      return '<li><span>' + escapeHtml(item.name) + '</span><span>' + escapeHtml(item.meta) + '</span></li>';
+    }).join('');
+    el.inspectorSources.innerHTML = sourceItems(project).map(function (item) {
+      return '<li><span>' + escapeHtml(item.name) + '</span><span>' + escapeHtml(item.meta) + '</span></li>';
+    }).join('');
+    var latest = events.slice().reverse().slice(0, 4);
+    el.inspectorActivity.innerHTML = latest.length
+      ? latest.map(function (event) { return '<li>' + escapeHtml(event.message) + '</li>'; }).join('')
+      : '<li>Brak aktywności.</li>';
+    if (project.status === 'completed') {
+      el.inspectorDownloadLink.hidden = false;
+      el.inspectorDownloadLink.href = '/api/projects/' + project.id + '/download';
+    } else {
+      el.inspectorDownloadLink.hidden = true;
+      el.inspectorDownloadLink.href = '#';
+    }
+  }
+
+  function setActiveTab(tabName) {
+    state.activeTab = tabName;
+    el.tabButtons.forEach(function (button) {
+      var active = button.dataset.tab === tabName;
+      button.classList.toggle('is-active', active);
+      button.setAttribute('aria-selected', String(active));
+    });
+    el.tabPanels.forEach(function (panel) {
+      panel.hidden = panel.id !== 'panel-' + tabName;
     });
   }
 
@@ -227,36 +431,86 @@
   async function runAction(path) {
     try {
       await apiFetch(path, { method: 'POST' });
+      showToast('Akcja przyjęta.');
       await refreshDetail();
       await loadProjects();
       startPolling();
     } catch (err) {
       el.errorBanner.hidden = false;
       el.errorBanner.textContent = 'Akcja nieudana: ' + err.message;
+      showToast('Akcja nieudana: ' + err.message);
     }
   }
 
-  el.startButton.addEventListener('click', function () {
-    runAction('/api/projects/' + state.selectedId + '/start');
-  });
-  el.pauseButton.addEventListener('click', function () {
-    runAction('/api/projects/' + state.selectedId + '/pause');
-  });
-  el.resumeButton.addEventListener('click', function () {
-    runAction('/api/projects/' + state.selectedId + '/resume');
-  });
-  el.cancelButton.addEventListener('click', function () {
-    runAction('/api/projects/' + state.selectedId + '/cancel');
-  });
+  function runComposerCommand(command) {
+    var project = state.selectedProject;
+    if (!state.selectedId || !project) {
+      showToast('Najpierw wybierz projekt.');
+      return;
+    }
+    if (command === 'download') {
+      if (project.status === 'completed') {
+        window.location.href = '/api/projects/' + state.selectedId + '/download';
+      } else {
+        showToast('Pobieranie będzie dostępne po ukończeniu.');
+      }
+      return;
+    }
+    if (command === 'start') runAction('/api/projects/' + state.selectedId + '/start');
+    if (command === 'pause') runAction('/api/projects/' + state.selectedId + '/pause');
+    if (command === 'resume') runAction('/api/projects/' + state.selectedId + '/resume');
+    if (command === 'cancel') runAction('/api/projects/' + state.selectedId + '/cancel');
+  }
 
-  el.newProjectButton.addEventListener('click', function () {
+  function openNewProjectDialog() {
     el.formError.hidden = true;
     el.newProjectForm.reset();
+    el.fieldMode.value = 'guide';
+    state.wizardStep = 0;
+    renderWizard();
     el.newProjectDialog.showModal();
-  });
-  el.cancelNewProject.addEventListener('click', function () {
-    el.newProjectDialog.close();
-  });
+  }
+
+  function renderWizard() {
+    el.wizardSteps.forEach(function (step) {
+      step.hidden = Number(step.dataset.step) !== state.wizardStep;
+    });
+    var review = state.wizardStep === 3;
+    var labels = ['Cel i format', 'Odbiorca i marka', 'Źródła i ustawienia', 'Sprawdź przed wysłaniem'];
+    el.wizardStatus.textContent = review ? 'Sprawdź przed wysłaniem' : 'Krok ' + (state.wizardStep + 1) + ' z 3: ' + labels[state.wizardStep];
+    el.wizardBack.hidden = state.wizardStep === 0;
+    el.wizardNext.hidden = review;
+    el.submitNewProject.hidden = !review;
+    if (review) renderWizardReview();
+  }
+
+  function renderWizardReview() {
+    var data = new FormData(el.newProjectForm);
+    var rows = [
+      ['Tytuł', data.get('title')],
+      ['Temat', data.get('topic')],
+      ['Tryb', MODE_LABELS[data.get('mode')] || data.get('mode')],
+      ['Odbiorca', data.get('audience') || 'Nie ustawiono'],
+      ['Marka', data.get('brand') || 'Nie ustawiono'],
+      ['Ton', data.get('tone') || 'Nie ustawiono'],
+      ['Źródła', data.get('source_materials') ? 'Dołączono wklejony tekst' : 'Brak wklejonego tekstu'],
+    ];
+    el.wizardReview.innerHTML = rows.map(function (row) {
+      return '<dt>' + escapeHtml(row[0]) + '</dt><dd>' + escapeHtml(row[1]) + '</dd>';
+    }).join('');
+  }
+
+  function nextWizardStep() {
+    if (state.wizardStep < 2) {
+      var visible = el.wizardSteps[state.wizardStep];
+      var required = visible.querySelectorAll('[required]');
+      for (var i = 0; i < required.length; i += 1) {
+        if (!required[i].reportValidity()) return;
+      }
+    }
+    state.wizardStep = Math.min(3, state.wizardStep + 1);
+    renderWizard();
+  }
 
   async function uploadSourceFiles(projectId, files) {
     var uploadData = new FormData();
@@ -268,6 +522,66 @@
       body: uploadData,
     });
   }
+
+  function renderPalette() {
+    var query = el.paletteInput.value.trim().toLowerCase();
+    var commands = COMMANDS.filter(function (command) {
+      return !query || command.id.indexOf(query) !== -1 || command.label.toLowerCase().indexOf(query) !== -1;
+    });
+    if (state.paletteIndex >= commands.length) state.paletteIndex = 0;
+    el.paletteList.innerHTML = commands.map(function (command, index) {
+      return '<li id="palette-command-' + command.id + '" role="option" aria-selected="' +
+        String(index === state.paletteIndex) + '" data-command="' + command.id + '">' +
+        '<span>' + escapeHtml(command.label) + '</span><span>' + escapeHtml(command.hint) + '</span></li>';
+    }).join('');
+    var active = commands[state.paletteIndex];
+    if (active) el.paletteInput.setAttribute('aria-activedescendant', 'palette-command-' + active.id);
+  }
+
+  function openPalette() {
+    state.palettePreviousFocus = document.activeElement;
+    state.paletteIndex = 0;
+    el.paletteInput.value = '';
+    renderPalette();
+    el.commandPalette.showModal();
+    el.paletteInput.focus();
+  }
+
+  function restorePaletteFocus() {
+    if (state.palettePreviousFocus && typeof state.palettePreviousFocus.focus === 'function') {
+      state.palettePreviousFocus.focus();
+    }
+    state.palettePreviousFocus = null;
+  }
+
+  function closePalette() {
+    el.commandPalette.close();
+  }
+
+  el.workspacePrimaryAction.addEventListener('click', function () {
+    runComposerCommand(el.workspacePrimaryAction.dataset.command);
+  });
+  el.mobilePrimaryAction.addEventListener('click', function () {
+    runComposerCommand(el.mobilePrimaryAction.dataset.command);
+  });
+  el.newProjectButton.addEventListener('click', openNewProjectDialog);
+  el.railNewProjectButton.addEventListener('click', openNewProjectDialog);
+  el.emptyNewProjectButton.addEventListener('click', openNewProjectDialog);
+  el.cancelNewProject.addEventListener('click', function () {
+    el.newProjectDialog.close();
+  });
+  el.wizardNext.addEventListener('click', nextWizardStep);
+  el.wizardBack.addEventListener('click', function () {
+    state.wizardStep = Math.max(0, state.wizardStep - 1);
+    renderWizard();
+  });
+  el.presetButtons.forEach(function (button) {
+    button.addEventListener('click', function () {
+      el.fieldMode.value = button.dataset.preset;
+      el.presetButtons.forEach(function (preset) { preset.classList.remove('is-selected'); });
+      button.classList.add('is-selected');
+    });
+  });
 
   el.newProjectForm.addEventListener('submit', async function (event) {
     event.preventDefault();
@@ -285,6 +599,7 @@
         body: JSON.stringify(payload),
       });
       project = await response.json();
+      showToast('Projekt utworzony.');
     } catch (err) {
       el.formError.hidden = false;
       el.formError.textContent = 'Nie udało się utworzyć projektu: ' + err.message;
@@ -298,33 +613,119 @@
     if (selectedFiles.length > 0) {
       try {
         await uploadSourceFiles(project.id, selectedFiles);
+        showToast('Pliki źródłowe przesłane.');
         await refreshDetail();
       } catch (err) {
         el.errorBanner.hidden = false;
         el.errorBanner.textContent =
           'Projekt utworzony, ale przesyłanie plików źródłowych nie powiodło się: ' + err.message;
+        showToast('Przesyłanie źródeł nie powiodło się.');
       }
     }
   });
 
   el.backToList.addEventListener('click', function () {
-    el.projectDetail.hidden = true;
-    el.emptyDetail.hidden = false;
-    stopPolling();
+    openProjectDrawer();
   });
-
+  el.projectSearch.addEventListener('input', function () {
+    state.searchQuery = el.projectSearch.value;
+    renderProjectList();
+  });
+  el.statusFilters.forEach(function (button) {
+    button.addEventListener('click', function () {
+      state.statusFilter = button.dataset.statusFilter;
+      el.statusFilters.forEach(function (filter) { filter.classList.remove('is-active'); });
+      button.classList.add('is-active');
+      renderProjectList();
+    });
+  });
+  el.tabButtons.forEach(function (button) {
+    button.addEventListener('click', function () {
+      setActiveTab(button.dataset.tab);
+    });
+  });
+  el.composerCommands.forEach(function (button) {
+    button.addEventListener('click', function () {
+      runComposerCommand(button.dataset.command);
+    });
+  });
+  el.composer.addEventListener('submit', function (event) {
+    event.preventDefault();
+  });
+  el.inspectorToggle.addEventListener('click', function () {
+    setInspectorOpen(!el.inspectorPanel.classList.contains('is-open'));
+  });
   el.bottomNavButtons.forEach(function (button) {
     button.addEventListener('click', function () {
       if (button.dataset.nav === 'new') {
-        el.newProjectButton.click();
+        openNewProjectDialog();
+      } else if (button.dataset.nav === 'inspector') {
+        if (state.selectedId) el.inspectorToggle.click();
       } else {
-        el.projectDetail.hidden = true;
-        el.emptyDetail.hidden = false;
-        window.scrollTo(0, 0);
+        openProjectDrawer();
       }
     });
   });
+  el.projectDrawerBackdrop.addEventListener('click', closeProjectDrawer);
+
+  el.paletteOpenButton.addEventListener('click', openPalette);
+  el.paletteInput.addEventListener('input', function () {
+    state.paletteIndex = 0;
+    renderPalette();
+  });
+  el.paletteInput.addEventListener('keydown', function (event) {
+    var options = el.paletteList.querySelectorAll('[data-command]');
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closePalette();
+    }
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      state.paletteIndex = options.length ? (state.paletteIndex + 1) % options.length : 0;
+      renderPalette();
+    }
+    if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      state.paletteIndex = options.length ? (state.paletteIndex - 1 + options.length) % options.length : 0;
+      renderPalette();
+    }
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      var active = options[state.paletteIndex];
+      if (active) {
+        runComposerCommand(active.dataset.command);
+        closePalette();
+      }
+    }
+  });
+  el.paletteList.addEventListener('click', function (event) {
+    var item = event.target.closest('[data-command]');
+    if (!item) return;
+    runComposerCommand(item.dataset.command);
+    closePalette();
+  });
+  document.addEventListener('keydown', function (event) {
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+      event.preventDefault();
+      openPalette();
+    }
+    if (event.key === 'Escape' && el.commandPalette.open) {
+      event.preventDefault();
+      closePalette();
+    } else if (event.key === 'Escape' && el.inspectorPanel.classList.contains('is-open')) {
+      event.preventDefault();
+      setInspectorOpen(false);
+    } else if (event.key === 'Escape' && state.projectDrawerOpen) {
+      event.preventDefault();
+      closeProjectDrawer();
+    }
+  });
+  window.addEventListener('resize', updateMobileChrome);
+  el.commandPalette.addEventListener('close', restorePaletteFocus);
 
   checkHealth();
   loadProjects();
+  setActiveTab('workflow');
+  renderPalette();
+  updateMobileChrome();
 })();

@@ -128,3 +128,217 @@ def test_index_has_bounded_source_file_upload_input():
 def test_favicon_is_valid_svg():
     svg = read("favicon.svg")
     assert svg.strip().startswith("<svg") or "<?xml" in svg[:100]
+
+
+def test_index_has_codex_workspace_shell_regions():
+    html = read("index.html")
+    for fragment in (
+        'class="workspace-shell"',
+        'class="project-rail"',
+        'class="workspace-panel"',
+        'class="inspector-panel"',
+        'id="command-composer"',
+    ):
+        assert fragment in html
+    assert re.search(r'<nav[^>]+class=["\'][^"\']*project-rail[^"\']*["\'][^>]+aria-label=["\']Projekty', html)
+    assert re.search(r'<aside[^>]+class=["\'][^"\']*inspector-panel[^"\']*["\']', html)
+
+
+def test_project_rail_has_search_status_filters_and_new_action():
+    html = read("index.html")
+    assert 'id="project-search"' in html
+    assert 'type="search"' in html
+    for status in ("all", "draft", "running", "paused", "completed", "failed", "cancelled"):
+        assert f'data-status-filter="{status}"' in html
+    assert 'id="new-project-button"' in html
+
+
+def test_workspace_has_header_progress_contextual_action_and_tabs():
+    html = read("index.html")
+    for fragment in (
+        'id="workspace-primary-action"',
+        'id="workspace-progress-label"',
+        'role="tablist"',
+        'id="tab-workflow"',
+        'id="tab-files"',
+        'id="tab-activity"',
+        'id="panel-workflow"',
+        'id="panel-files"',
+        'id="panel-activity"',
+    ):
+        assert fragment in html
+
+
+def test_inspector_exposes_outputs_sources_activity_and_download():
+    html = read("index.html")
+    for fragment in (
+        'id="inspector-outputs"',
+        'id="inspector-sources"',
+        'id="inspector-activity"',
+        'id="inspector-download-link"',
+        'id="inspector-sheet-toggle"',
+    ):
+        assert fragment in html
+
+
+def test_command_composer_maps_only_existing_project_actions():
+    html = read("index.html")
+    app_js = read("app.js")
+    for command in ("start", "pause", "resume", "cancel", "download"):
+        assert f'data-command="{command}"' in html
+    forbidden = set(re.findall(r'data-command=["\']([^"\']+)["\']', html)) - {
+        "start",
+        "pause",
+        "resume",
+        "cancel",
+        "download",
+    }
+    assert not forbidden
+    assert "runComposerCommand" in app_js
+
+
+def test_command_palette_is_accessible_keyboard_navigable_and_restores_focus():
+    html = read("index.html")
+    app_js = read("app.js")
+    assert 'id="command-palette"' in html
+    assert 'role="dialog"' in html
+    assert 'id="command-palette-list"' in html
+    assert 'aria-activedescendant' in html
+    for fragment in ("metaKey", "ctrlKey", "Escape", "ArrowDown", "ArrowUp", "restorePaletteFocus"):
+        assert fragment in app_js
+
+
+def test_new_project_dialog_is_three_step_accessible_wizard_preserving_fields():
+    html = read("index.html")
+    for step in ("wizard-step-goal", "wizard-step-brand", "wizard-step-sources", "wizard-step-review"):
+        assert f'id="{step}"' in html
+    for fragment in (
+        'id="wizard-back"',
+        'id="wizard-next"',
+        'id="wizard-review"',
+        'aria-live="polite"',
+        'data-preset="lead-magnet"',
+        'data-preset="guide"',
+        'data-preset="premium"',
+    ):
+        assert fragment in html
+    for field_id in (
+        "field-title",
+        "field-topic",
+        "field-mode",
+        "field-language",
+        "field-audience",
+        "field-brand",
+        "field-tone",
+        "field-source-materials",
+        "field-source-files",
+    ):
+        assert f'id="{field_id}"' in html
+
+
+def test_app_js_preserves_create_then_upload_api_behavior():
+    app_js = read("app.js")
+    create_index = app_js.find("apiFetch('/api/projects'")
+    upload_index = app_js.find("uploadSourceFiles(project.id")
+    assert create_index != -1 and upload_index != -1
+    assert create_index < upload_index
+    assert "formData.delete('source_files')" in app_js
+    assert "uploadData.append('files', file)" in app_js
+
+
+def test_styles_define_required_responsive_workspace_layouts():
+    css = read("styles.css")
+    assert re.search(r"grid-template-columns:\s*var\(--rail-width\)\s+minmax\(0,\s*1fr\)\s+var\(--inspector-width\)", css)
+    assert "@media (min-width: 768px)" in css
+    assert "@media (min-width: 1150px)" in css
+    assert "@media (max-width: 767px)" in css
+    assert "overflow-x: hidden" in css
+    assert "min-width: 0" in css
+
+
+def test_styles_include_skeleton_toast_bottom_sheet_and_sticky_mobile_action():
+    css = read("styles.css")
+    for selector in (
+        ".skeleton",
+        ".toast-region",
+        ".inspector-sheet",
+        ".mobile-sticky-action",
+        ".project-drawer",
+    ):
+        assert selector in css
+
+
+def test_styles_avoid_gradients_and_keep_rule_values_tokenized():
+    css = read("styles.css")
+    assert "gradient(" not in css
+    css_without_tokens = re.sub(r":root\s*{.*?}", "", css, flags=re.S)
+    assert not re.search(r"#[0-9a-fA-F]{3,8}", css_without_tokens)
+    assert "letter-spacing: -" not in css
+
+
+def test_mobile_project_rail_is_drawer_not_inline_split_view():
+    html = read("index.html")
+    css = read("styles.css")
+    app_js = read("app.js")
+    assert 'id="project-drawer-backdrop"' in html
+    assert 'aria-controls="sidebar-nav"' in html
+    assert "openProjectDrawer" in app_js
+    assert "closeProjectDrawer" in app_js
+    assert "project-drawer-backdrop" in app_js
+    assert "event.key === 'Escape'" in app_js
+    mobile_block = re.search(r"@media \(max-width: 767px\)\s*{(?P<body>.*?)\n}", css, re.S)
+    assert mobile_block, "expected mobile breakpoint"
+    assert re.search(r"\.project-rail\s*{[^}]*position:\s*fixed", css, re.S)
+    assert re.search(r"\.project-rail\s*{[^}]*transform:\s*translateX\(-100%\)", css, re.S)
+    assert ".project-rail.is-open" in css
+    assert "closeProjectDrawer();" in app_js
+
+
+def test_mobile_empty_and_selected_states_hide_duplicate_actions():
+    css = read("styles.css")
+    app_js = read("app.js")
+    assert "updateMobileChrome" in app_js
+    assert "el.mobilePrimaryAction.hidden = !hasProject" in app_js
+    assert "el.inspectorPanel.hidden = !hasProject" in app_js
+    assert re.search(r"@media \(max-width: 767px\).*?\.command-composer\s*{\s*display:\s*none", css, re.S)
+    assert re.search(r"\.inspector-panel\s*{[^}]*transform:\s*translateY\(100%\)", css, re.S)
+
+
+def test_mobile_header_and_toasts_do_not_cover_actions():
+    css = read("styles.css")
+    app_js = read("app.js")
+    assert re.search(r"@media \(max-width: 767px\).*?\.header-context\s*{\s*display:\s*none", css, re.S)
+    assert re.search(r"@media \(max-width: 767px\).*?#palette-open-button\s*{\s*display:\s*none", css, re.S)
+    assert re.search(r"@media \(max-width: 767px\).*?\.app-header\s*{[^}]*flex-wrap:\s*nowrap", css, re.S)
+    assert re.search(r"\.toast-region\s*{[^}]*top:\s*max\(var\(--space-3\), env\(safe-area-inset-top\)\)", css, re.S)
+    assert re.search(r"@media \(max-width: 767px\).*?\.toast-region\s*{[^}]*right:\s*max\(var\(--space-3\), env\(safe-area-inset-right\)\)", css, re.S)
+    assert "window.setTimeout" in app_js and "toast.remove()" in app_js
+
+
+def test_visible_shell_copy_is_consistently_polish():
+    html = read("index.html")
+    app_js = read("app.js")
+    for text in (
+        "Projekty",
+        "Szukaj",
+        "Wszystkie",
+        "Szkic",
+        "W trakcie",
+        "Wstrzymane",
+        "Gotowe",
+        "Błąd",
+        "Anulowane",
+        "Proces",
+        "Pliki",
+        "Aktywność",
+        "Inspektor",
+        "Źródła",
+        "Wyniki",
+        "Ostatnia aktywność",
+        "+ Nowy ebook",
+    ):
+        assert text in html or text in app_js
+    for hybrid in ("+ New / Nowy ebook", ">Projects<", ">Search<", ">Workflow<", ">Files<", ">Activity<", ">Inspector<"):
+        assert hybrid not in html
+    for label in ("Uruchom projekt", "Wstrzymaj po bieżącym etapie", "Wznów projekt", "Anuluj projekt", "Pobierz paczkę ZIP"):
+        assert label in app_js
