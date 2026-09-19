@@ -32,6 +32,20 @@ class StageDefinition(NamedTuple):
     label: str
 
 
+class ModeConfig(NamedTuple):
+    label: str
+    page_range: tuple[int, int]
+    chapter_count: int
+    words_per_chapter: int
+
+
+MODE_CONFIG: dict[str, ModeConfig] = {
+    "lead-magnet": ModeConfig("Lead magnet", (15, 30), 5, 320),
+    "guide": ModeConfig("Poradnik ekspercki", (40, 100), 8, 600),
+    "premium": ModeConfig("Ksiazka premium", (150, 300), 14, 900),
+}
+
+
 STAGE_DEFINITIONS: tuple[StageDefinition, ...] = (
     StageDefinition("strategy", "Strategia"),
     StageDefinition("research", "Research"),
