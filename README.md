@@ -16,6 +16,10 @@ Plan: `docs/superpowers/plans/2026-09-19-ebook-factory-mvp.md`
 - Optional: `typst` on `PATH` (or at `~/.local/bin/typst`) for higher-fidelity
   PDF output. Without it, the pipeline falls back to a pure-stdlib PDF writer
   and records which engine ran in the QA report.
+- Optional: `pdftotext` (poppler-utils) on `PATH` for extracting text from
+  uploaded PDF source files. Without it, PDFs are still stored but their
+  text is not appended to `source_materials` (extraction is reported as
+  `unavailable`).
 
 ## Setup
 
@@ -75,11 +79,37 @@ All endpoints are served from the same FastAPI app as the static dashboard.
 | POST | `/api/projects/{id}/cancel` | Cancel |
 | GET | `/api/projects/{id}/events` | Event log |
 | GET | `/api/projects/{id}/download` | Delivery ZIP |
+| POST | `/api/projects/{id}/sources` | Upload source-material files (multipart) |
 
 Modes: `lead-magnet`, `guide`, `premium`. The pipeline runs each project on
 its own background thread, persists state after every stage so it survives a
 process restart, and retries a failing stage up to three times before
 marking the project `failed`.
+
+### Source-material uploads
+
+`POST /api/projects/{id}/sources` accepts a `multipart/form-data` request
+with one or more `files` parts. Uploads are bounded and sanitized:
+
+- Only `.txt`, `.md`, `.pdf` extensions are accepted (case-insensitive);
+  anything else is rejected with `422`.
+- Each file must be non-empty and at most 5 MiB; a project may hold at most
+  5 source files total (checked cumulatively across requests).
+- Filenames are sanitized to a flat, safe basename before storage — path
+  separators and traversal segments (e.g. `../../etc/passwd.txt`) are
+  stripped so files can only ever land under `projects/<slug>/sources/`.
+- On success, each file is described in the response as
+  `{filename, stored_path, size_bytes, extraction_status, extracted_chars}`.
+  `extraction_status` is `extracted`, `empty`, or `unavailable` (PDF text
+  extraction requires `pdftotext`; without it the file is still stored).
+- Extracted text is appended to the project's `source_materials` (used by
+  the `strategy` and `research` stages) without exceeding the existing
+  50,000-character cap — text beyond the cap is truncated, never rejected.
+
+The dashboard's "Nowy ebook" dialog includes a `.txt,.md,.pdf` multi-file
+picker; selected files are uploaded right after the project is created (and
+before the pipeline is started), with a clear inline error if the upload is
+rejected.
 
 ## Deployment
 

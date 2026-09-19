@@ -7,12 +7,20 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, Optional
 
-from fastapi import APIRouter, FastAPI, HTTPException
+from fastapi import APIRouter, FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from .models import MAX_SOURCE_MATERIALS_CHARS, Event, Project, ProjectCreate, Stage
 from .pipeline import PipelineRunner
+from .sources import (
+    MAX_SOURCE_FILES_PER_PROJECT,
+    SourceUploadError,
+    count_existing_source_files,
+    extract_text,
+    store_source_file,
+    validate_source_upload,
+)
 
 
 class ProjectCreateRequest(BaseModel):
@@ -231,6 +239,59 @@ def build_router(
             if project.status not in ("completed", "cancelled"):
                 repository.update_project(project_id, status="cancelled")
         return _project_dict(repository.get_project(project_id))
+
+    @router.post("/api/projects/{project_id}/sources", status_code=201)
+    def upload_sources(
+        project_id: str, files: list[UploadFile] = File(...)
+    ) -> list[dict]:
+        project = _get_project_or_404(project_id)
+        project_dir = projects_root / project.slug
+
+        uploads: list[tuple[str, bytes]] = []
+        for upload in files:
+            content = upload.file.read()
+            try:
+                validate_source_upload(upload.filename or "", content)
+            except SourceUploadError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+            uploads.append((upload.filename or "", content))
+
+        existing_count = count_existing_source_files(project_dir)
+        if existing_count + len(uploads) > MAX_SOURCE_FILES_PER_PROJECT:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"project may have at most {MAX_SOURCE_FILES_PER_PROJECT} "
+                    "source files"
+                ),
+            )
+
+        results: list[dict] = []
+        appended_parts: list[str] = []
+        for filename, content in uploads:
+            dest = store_source_file(project_dir, filename, content)
+            text, status = extract_text(dest)
+            results.append(
+                {
+                    "filename": dest.name,
+                    "stored_path": f"sources/{dest.name}",
+                    "size_bytes": len(content),
+                    "extraction_status": status,
+                    "extracted_chars": len(text) if text else 0,
+                }
+            )
+            if text:
+                appended_parts.append(f"[{dest.name}]\n{text}")
+
+        if appended_parts:
+            current = project.source_materials or ""
+            addition = "\n\n".join(appended_parts)
+            combined = f"{current}\n\n{addition}" if current else addition
+            repository.update_project(
+                project_id, source_materials=combined[:MAX_SOURCE_MATERIALS_CHARS]
+            )
+
+        return results
 
     @router.get("/api/projects/{project_id}/events")
     def list_events(project_id: str) -> list[dict]:

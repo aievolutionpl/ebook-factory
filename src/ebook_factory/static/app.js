@@ -30,6 +30,7 @@
     newProjectForm: document.getElementById('new-project-form'),
     cancelNewProject: document.getElementById('cancel-new-project'),
     formError: document.getElementById('form-error'),
+    sourceFilesInput: document.getElementById('field-source-files'),
     backToList: document.getElementById('back-to-list'),
     bottomNavButtons: document.querySelectorAll('.bottom-nav-item'),
   };
@@ -257,23 +258,52 @@
     el.newProjectDialog.close();
   });
 
+  async function uploadSourceFiles(projectId, files) {
+    var uploadData = new FormData();
+    files.forEach(function (file) {
+      uploadData.append('files', file);
+    });
+    await apiFetch('/api/projects/' + projectId + '/sources', {
+      method: 'POST',
+      body: uploadData,
+    });
+  }
+
   el.newProjectForm.addEventListener('submit', async function (event) {
     event.preventDefault();
+    var selectedFiles = el.sourceFilesInput && el.sourceFilesInput.files
+      ? Array.from(el.sourceFilesInput.files)
+      : [];
     var formData = new FormData(el.newProjectForm);
+    formData.delete('source_files');
     var payload = Object.fromEntries(formData.entries());
+    var project;
     try {
       var response = await apiFetch('/api/projects', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      var project = await response.json();
-      el.newProjectDialog.close();
-      await loadProjects();
-      await selectProject(project.id);
+      project = await response.json();
     } catch (err) {
       el.formError.hidden = false;
       el.formError.textContent = 'Nie udało się utworzyć projektu: ' + err.message;
+      return;
+    }
+
+    el.newProjectDialog.close();
+    await loadProjects();
+    await selectProject(project.id);
+
+    if (selectedFiles.length > 0) {
+      try {
+        await uploadSourceFiles(project.id, selectedFiles);
+        await refreshDetail();
+      } catch (err) {
+        el.errorBanner.hidden = false;
+        el.errorBanner.textContent =
+          'Projekt utworzony, ale przesyłanie plików źródłowych nie powiodło się: ' + err.message;
+      }
     }
   });
 

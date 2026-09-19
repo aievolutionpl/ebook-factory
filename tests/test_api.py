@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from ebook_factory.api import ProjectAlreadyRunningError, WorkerRegistry
 from ebook_factory.app import create_app
+from ebook_factory.repository import ProjectRepository
 
 
 @pytest.fixture
@@ -285,3 +286,143 @@ def test_concurrent_start_requests_only_launch_one_worker(client):
     assert statuses.count(409) == 19, statuses
 
     wait_for_status(client, pid, {"completed", "failed"}, timeout=60)
+
+
+def _create_project(client, **overrides):
+    payload = {"title": "Sources demo", "topic": "T", "mode": "guide"}
+    payload.update(overrides)
+    r = client.post("/api/projects", json=payload)
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+def test_upload_source_returns_stored_metadata(client):
+    project = _create_project(client)
+    resp = client.post(
+        f"/api/projects/{project['id']}/sources",
+        files=[("files", ("notes.txt", b"unikalny fragment ZQX987", "text/plain"))],
+    )
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert len(body) == 1
+    entry = body[0]
+    assert entry["filename"] == "notes.txt"
+    assert entry["stored_path"] == "sources/notes.txt"
+    assert entry["size_bytes"] == len(b"unikalny fragment ZQX987")
+    assert entry["extraction_status"] == "extracted"
+    assert entry["extracted_chars"] > 0
+
+
+def test_upload_source_for_unknown_project_returns_404(client):
+    resp = client.post(
+        "/api/projects/does-not-exist/sources",
+        files=[("files", ("notes.txt", b"content", "text/plain"))],
+    )
+    assert resp.status_code == 404
+
+
+def test_upload_source_rejects_unsupported_extension(client, tmp_path):
+    project = _create_project(client)
+    resp = client.post(
+        f"/api/projects/{project['id']}/sources",
+        files=[("files", ("script.exe", b"binary", "application/octet-stream"))],
+    )
+    assert resp.status_code == 422
+    sources_dir = tmp_path / "projects" / project["slug"] / "sources"
+    assert not sources_dir.exists() or not any(sources_dir.iterdir())
+
+
+def test_upload_source_rejects_empty_file(client):
+    project = _create_project(client)
+    resp = client.post(
+        f"/api/projects/{project['id']}/sources",
+        files=[("files", ("empty.txt", b"", "text/plain"))],
+    )
+    assert resp.status_code == 422
+
+
+def test_upload_source_rejects_oversized_file(client):
+    project = _create_project(client)
+    too_big = b"a" * (5 * 1024 * 1024 + 1)
+    resp = client.post(
+        f"/api/projects/{project['id']}/sources",
+        files=[("files", ("big.txt", too_big, "text/plain"))],
+    )
+    assert resp.status_code == 422
+
+
+def test_upload_source_rejects_more_than_five_files_per_project(client):
+    project = _create_project(client)
+    files = [
+        ("files", (f"note-{i}.txt", f"content {i}".encode(), "text/plain")) for i in range(6)
+    ]
+    resp = client.post(f"/api/projects/{project['id']}/sources", files=files)
+    assert resp.status_code == 422
+
+
+def test_upload_source_rejects_sixth_file_across_separate_requests(client):
+    project = _create_project(client)
+    for i in range(5):
+        resp = client.post(
+            f"/api/projects/{project['id']}/sources",
+            files=[("files", (f"note-{i}.txt", f"content {i}".encode(), "text/plain"))],
+        )
+        assert resp.status_code == 201, resp.text
+
+    resp = client.post(
+        f"/api/projects/{project['id']}/sources",
+        files=[("files", ("note-6.txt", b"one too many", "text/plain"))],
+    )
+    assert resp.status_code == 422
+
+
+def test_upload_source_sanitizes_path_traversal_filename(client, tmp_path):
+    project = _create_project(client)
+    resp = client.post(
+        f"/api/projects/{project['id']}/sources",
+        files=[("files", ("../../etc/passwd.txt", b"pwned", "text/plain"))],
+    )
+    assert resp.status_code == 201, resp.text
+    entry = resp.json()[0]
+    assert entry["filename"] == "passwd.txt"
+    assert "/" not in entry["filename"]
+    assert not (tmp_path / "etc").exists()
+
+
+def test_upload_source_appends_extracted_text_to_source_materials_without_exceeding_cap(
+    client, tmp_path
+):
+    project = _create_project(client, source_materials="x" * 49_990)
+    resp = client.post(
+        f"/api/projects/{project['id']}/sources",
+        files=[("files", ("notes.txt", b"y" * 100, "text/plain"))],
+    )
+    assert resp.status_code == 201, resp.text
+
+    repo = ProjectRepository(tmp_path / "factory.db")
+    try:
+        stored = repo.get_project(project["id"])
+    finally:
+        repo.close()
+    assert stored.source_materials is not None
+    assert len(stored.source_materials) <= 50_000
+    assert stored.source_materials.startswith("x" * 49_990)
+
+
+def test_uploaded_source_text_flows_into_strategy_and_research_stages(client, tmp_path):
+    project = _create_project(client)
+    marker = "UNIKALNY-MARKER-UPLOAD-42"
+    resp = client.post(
+        f"/api/projects/{project['id']}/sources",
+        files=[("files", ("notes.txt", marker.encode("utf-8"), "text/plain"))],
+    )
+    assert resp.status_code == 201, resp.text
+
+    start = client.post(f"/api/projects/{project['id']}/start")
+    assert start.status_code == 202
+    wait_for_status(client, project["id"], {"completed", "failed"}, timeout=60)
+
+    strategy_path = tmp_path / "projects" / project["slug"] / "outline" / "strategy.md"
+    research_path = tmp_path / "projects" / project["slug"] / "research" / "notes.md"
+    assert marker in strategy_path.read_text(encoding="utf-8")
+    assert marker in research_path.read_text(encoding="utf-8")
