@@ -61,6 +61,18 @@ def test_store_source_file_accepts_pdf_extension(tmp_path):
     assert dest.suffix == ".pdf"
 
 
+def test_store_source_file_rejects_fake_pdf_content(tmp_path):
+    project_dir = tmp_path / "my-project"
+    with pytest.raises(SourceUploadError, match="PDF signature"):
+        store_source_file(project_dir, "notes.pdf", b"not really a pdf")
+
+
+def test_store_source_file_rejects_binary_disguised_as_text(tmp_path):
+    project_dir = tmp_path / "my-project"
+    with pytest.raises(SourceUploadError, match="UTF-8 text"):
+        store_source_file(project_dir, "notes.txt", b"\x00\xff\x00\xfe")
+
+
 def test_store_source_file_rejects_unsupported_extension(tmp_path):
     project_dir = tmp_path / "my-project"
     with pytest.raises(SourceUploadError):

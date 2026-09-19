@@ -46,6 +46,23 @@ def validate_source_upload(filename: str, content: bytes) -> None:
             f"file exceeds maximum size of {MAX_SOURCE_FILE_BYTES} bytes"
         )
 
+    # Validate the payload, not only the client-controlled filename/MIME type.
+    if suffix == ".pdf":
+        if not content.lstrip()[:5] == b"%PDF-":
+            raise SourceUploadError("file does not contain a valid PDF signature")
+    else:
+        try:
+            text = content.decode("utf-8-sig", errors="strict")
+        except UnicodeDecodeError as exc:
+            raise SourceUploadError("file is not valid UTF-8 text") from exc
+        if "\x00" in text:
+            raise SourceUploadError("file is not valid UTF-8 text")
+        control_count = sum(
+            1 for char in text if ord(char) < 32 and char not in "\n\r\t\f"
+        )
+        if control_count > max(2, len(text) // 100):
+            raise SourceUploadError("file is not valid UTF-8 text")
+
 
 def _unique_destination(sources_dir: Path, safe_name: str) -> Path:
     dest = sources_dir / safe_name
