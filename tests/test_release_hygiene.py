@@ -91,3 +91,46 @@ def test_no_forbidden_runtime_artifacts_are_tracked():
         or any(part in path or path.endswith(part.rstrip("/")) for part in forbidden_parts)
     ]
     assert offenders == []
+
+
+def test_readme_documents_the_workspace_feature_set():
+    readme = read("README.md")
+    for endpoint in (
+        "/api/stats",
+        "/api/projects/{id}/artifacts",
+        "/api/projects/{id}/metrics",
+        "/api/projects/{id}/retry",
+        "/api/projects/{id}/duplicate",
+    ):
+        assert endpoint in readme, f"README does not document {endpoint}"
+    for section in (
+        "Workflow: od pomysłu do paczki",
+        "Workspace UI",
+        "Co zawiera gotowa paczka",
+        "Własna struktura rozdziałów",
+        "Konfiguracja",
+        "Troubleshooting",
+    ):
+        assert section in readme, f"README is missing the {section!r} section"
+
+
+def test_readme_screenshots_all_exist():
+    import re
+
+    readme = read("README.md")
+    referenced = re.findall(r"!\[[^\]]*\]\((docs/screenshots/[^)]+)\)", readme)
+    assert len(referenced) >= 3
+    for path in referenced:
+        assert (ROOT / path).is_file(), f"README references a missing screenshot: {path}"
+
+
+def test_env_example_documents_every_supported_variable():
+    env_example = read(".env.example")
+    for variable in (
+        "EBOOK_FACTORY_AUTH_USER",
+        "EBOOK_FACTORY_AUTH_PASSWORD",
+        "EBOOK_FACTORY_CODEX_CLI",
+        "EBOOK_FACTORY_CLAUDE_CODE",
+        "EBOOK_FACTORY_DATA_DIR",
+    ):
+        assert variable in env_example, f".env.example does not mention {variable}"
