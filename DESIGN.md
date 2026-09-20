@@ -35,6 +35,9 @@ CSS values must resolve through tokens in `:root`; component rules should not in
 | `--color-danger-surface` | `rgba(255, 107, 107, 0.12)` | Error background |
 | `--color-info` | `#7fb4ff` | Running |
 | `--color-backdrop` | `rgba(0, 0, 0, 0.64)` | Modal backdrop |
+| `--color-accent-surface` | `rgba(79, 124, 255, 0.16)` | Selected project row |
+| `--color-success-surface` | `rgba(62, 207, 142, 0.14)` | Positive low-emphasis fills |
+| `--color-warning-surface` | `rgba(242, 184, 75, 0.14)` | Unsaved-change badge |
 
 ### Scale
 
@@ -60,7 +63,14 @@ CSS values must resolve through tokens in `:root`; component rules should not in
 - **Provider selector:** part of Sources/settings. `demo` remains the default; Codex CLI and Claude Code are opt-in local tools with setup guidance and availability status.
 - **Command palette:** Ctrl/Cmd+K opens; ArrowUp/ArrowDown moves active command; Enter executes; Esc closes; focus returns to the trigger.
 - **Command composer:** visible desktop/tablet command strip. Commands are limited to existing `start`, `pause`, `resume`, `cancel`, and `download`.
-- **Feedback:** toast region for action results, explicit error banners, skeleton loading, and empty states.
+- **Feedback:** toast region for action results, explicit error banners, skeleton loading, and empty states. Toasts collapse repeats into a counter, carry a dismiss control, and errors stay on screen longer than confirmations.
+- **Connection pill:** header status with dot plus label (`Połączono`, `Serwer nie odpowiada`, `Brak połączenia`); the last sync time lives in its tooltip. Label-only on mobile is not allowed to disappear into colour — the dot is decorative.
+- **Stage strip and timing line:** one segment per stage under the progress bar, plus `Etap n z m`, current stage duration and a remaining-time estimate derived from this project's own completed stage durations.
+- **Busy state:** any control that fires a request takes `.is-busy`, keeps its footprint, and is disabled for the duration, so no action can be submitted twice.
+- **Shortcuts dialog:** `?` or the header button opens the full key map; every shortcut listed there is implemented.
+- **Command palette availability:** commands the current project status cannot accept are ranked last, marked `aria-disabled`, and state the reason instead of failing at the API.
+- **File rows:** format badge from the real extension, per-group size totals, copy-path action, and preview for text, images and PDF.
+- **Settings dirty state:** unsaved edits raise a badge, enable `Przywróć`, and are confirmed before switching project or leaving the page.
 
 ## Accessibility
 
@@ -71,3 +81,12 @@ CSS values must resolve through tokens in `:root`; component rules should not in
 - `:focus-visible` is mandatory and uses the accent token.
 - `prefers-reduced-motion: reduce` disables transitions and animations.
 - No horizontal overflow at mobile, tablet, or desktop breakpoints.
+- Background refreshes must not steal focus: list and timeline re-renders restore focus to the same project or stage.
+- On mobile the workspace header keeps its controls on one row and gives the title the full width below them.
+
+## Runtime behaviour
+
+- Polling is a recursive timeout, never an interval: one request is in flight at a time. It runs fast while a project is running, backs off otherwise, and stops entirely while the tab is hidden.
+- Durations and relative timestamps tick locally between refreshes; only project state comes from the API.
+- The browser tab title carries the progress percentage while a project runs.
+- Filters, sorting, theme and preview wrapping persist per browser; nothing about a project is stored client-side.

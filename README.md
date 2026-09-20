@@ -142,28 +142,56 @@ Działa na desktopie, tablecie i telefonie.
 **Praca z projektem**
 
 - **Proces** — oś 11 etapów; każdy rozwijany: czas trwania, liczba prób,
-  komunikat i lista wytworzonych artefaktów (klikalna, otwiera podgląd).
-- **Pliki** — przeglądarka workspace z filtrem po nazwie, podziałem na
-  kategorie, podglądem tekstu/obrazów i pobieraniem pojedynczych plików.
-- **Aktywność** — log zdarzeń z filtrem poziomu (informacje / błędy).
+  znaczniki startu i końca, komunikat oraz lista wytworzonych artefaktów
+  (klikalna, otwiera podgląd). Nad osią pasek etapów pokazuje stan całego
+  przebiegu, a licznik podaje bieżący etap, czas jego trwania i szacowany
+  czas do końca liczony z rzeczywistych czasów ukończonych etapów.
+- **Pliki** — przeglądarka workspace z filtrem po nazwie, sortowaniem
+  (ścieżka / nazwa / rozmiar / data), podziałem na kategorie, sumą rozmiaru
+  w każdej grupie, znacznikiem formatu, kopiowaniem ścieżki, podglądem
+  tekstu, obrazów i PDF oraz pobieraniem pojedynczych plików.
+- **Aktywność** — log zdarzeń z wyszukiwarką treści, filtrem poziomu
+  (informacje / błędy), pełnym znacznikiem czasu pod kursorem oraz
+  kopiowaniem i pobieraniem logu jako pliku tekstowego.
 - **Ustawienia** — edycja projektu (`PATCH`), blokowana w trakcie produkcji.
+  Niezapisane zmiany są oznaczane, można je cofnąć przyciskiem **Przywróć**,
+  a przejście na inny projekt lub zamknięcie karty wymaga potwierdzenia.
 - **Inspektor** — status agenta, wyniki, źródła (z wgrywaniem plików w locie)
   i ostatnia aktywność.
 
 **Sterowanie**
 
-- Paleta komend: `Ctrl`/`Cmd` + `K`.
+- Paleta komend: `Ctrl`/`Cmd` + `K`. Pokazuje tylko komendy dopuszczalne dla
+  bieżącego stanu projektu; pozostałe są wyszarzone wraz z powodem.
 - Skróty: `n` — nowy ebook, `/` — wyszukiwarka, `1`–`4` — przełączanie
-  zakładek.
+  zakładek, `r` — odświeżenie danych, `?` — spis skrótów, `↑`/`↓` — ruch po
+  liście projektów.
 - Pasek szybkich komend: uruchom / wstrzymaj / wznów / anuluj / pobierz.
 - Menu **Więcej**: ponów od błędu, edytuj ustawienia, duplikuj, usuń
   (usunięcie wymaga potwierdzenia i kasuje także pliki projektu).
-- Przełącznik motywu jasny/ciemny, zapamiętywany w przeglądarce.
+- Przełącznik motywu jasny/ciemny oraz filtry, sortowania i tryb zawijania
+  podglądu — zapamiętywane w przeglądarce.
+
+**Stan i odświeżanie**
+
+- Wskaźnik połączenia w nagłówku: połączono / serwer nie odpowiada / brak
+  połączenia, z czasem ostatniej synchronizacji w podpowiedzi.
+- Odpytywanie API dopasowuje się do stanu projektu (szybciej w trakcie
+  produkcji), zatrzymuje się na nieaktywnej karcie i nigdy nie nakłada na
+  siebie dwóch żądań.
+- Czasy trwania i znaczniki „przed chwilą” odliczają lokalnie, bez dodatkowego
+  ruchu sieciowego; tytuł karty przeglądarki pokazuje postęp produkcji.
+- Przyciski akcji blokują się na czas żądania, więc podwójne kliknięcie nie
+  wyśle dwóch komend.
 
 **Dostępność i responsywność**
 
 - Widoczny focus ring, `prefers-reduced-motion`, skip link, etykiety dla
   wszystkich pól, role ARIA na zakładkach, dialogach i palecie.
+- Odświeżenie listy w tle nie zabiera focusu — po ponownym renderze wraca on
+  na ten sam projekt lub etap.
+- Status nigdy nie jest sygnalizowany samym kolorem: każdy chip, pasek etapów
+  i wskaźnik połączenia mają czytelną etykietę.
 - Poniżej 768 px lista projektów staje się szufladą, inspektor — dolnym
   arkuszem, a główna akcja przykleja się do dołu ekranu.
 
@@ -426,6 +454,15 @@ Smoke test przez HTTP:
 PYTHONPATH=src .venv/bin/python scripts/smoke_e2e.py --base-url http://127.0.0.1:8765
 ```
 
+Screenshoty w `docs/screenshots` odtwarza jedno polecenie: skrypt startuje
+aplikację na katalogu tymczasowym, produkuje demo ebooka i zapisuje ujęcia dla
+desktopu, tabletu i telefonu.
+
+```bash
+pip install playwright && playwright install chromium
+python scripts/capture_screenshots.py
+```
+
 Zasady contributingu: [CONTRIBUTING.md](CONTRIBUTING.md).
 Zgłaszanie podatności: [SECURITY.md](SECURITY.md).
 
@@ -491,7 +528,7 @@ src/ebook_factory/
 ├── pdfcheck.py     Kontrola PDF na potrzeby QA
 └── static/         Workspace UI (HTML, CSS, JS, favicon)
 
-scripts/            Launcher serwera i klient smoke E2E
+scripts/            Launcher serwera, smoke E2E i generator screenshotów
 deploy/             Lokalne helpery produkcyjne
 docs/               Specyfikacje, plany i screenshoty
 tests/              Testy jednostkowe, API, providerów, UI i wydania
