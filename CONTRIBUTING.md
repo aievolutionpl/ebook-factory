@@ -17,7 +17,9 @@ GREEN.
 
 ## Rules
 
-- Keep the project AGPL-3.0-only.
+- Keep the project MIT-licensed. By contributing you agree your changes ship
+  under the MIT license in [LICENSE](LICENSE), so anyone stays free to use,
+  modify and redistribute them.
 - Do not commit secrets, `.env`, `data/`, `projects/`, generated ebooks,
   SQLite databases, virtualenvs, or provider credentials.
 - Use argv lists for subprocesses. Never use shell interpolation for provider

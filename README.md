@@ -10,7 +10,9 @@ treści na zewnątrz. Domyślny provider `demo` jest deterministyczny i darmowy;
 per projekt możesz włączyć własną, lokalną instalację Codex CLI albo Claude
 Code.
 
-AGPL-3.0-only.
+**Licencja MIT — rób z tym, co chcesz.** Używaj prywatnie i komercyjnie,
+rozbudowuj, forkuj, zamykaj w swoim produkcie, sprzedawaj. Jedyny warunek:
+zostaw notę o prawach autorskich.
 
 > **Local-first, open source.** Ebook Factory nie przechowuje żadnych danych
 > logowania do dostawców AI i nic nie publikuje automatycznie.
@@ -363,6 +365,7 @@ pokazuje faktyczny stan produkcji zamiast go zgadywać.
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/health` | Liveness check |
+| GET | `/api/version` | Build identity: wersja, licencja, tryby, providerzy |
 | GET | `/api/providers` | Provider labels and availability |
 | GET | `/api/stats` | Portfolio counters by status |
 | POST | `/api/projects` | Create project, default provider `demo` |
@@ -382,11 +385,26 @@ pokazuje faktyczny stan produkcji zamiast go zgadywać.
 | POST | `/api/projects/{id}/retry` | Replay from the first unfinished stage |
 | POST | `/api/projects/{id}/cancel` | Cancel project |
 
+### Zachowanie przy błędach
+
+Pipeline nigdy nie zostawia projektu w stanie, z którego nie da się wyjść:
+
+| Sytuacja | Co robi program |
+| --- | --- |
+| Etap kończy się błędem | Do `MAX_STAGE_ATTEMPTS` prób, potem `failed` z komunikatem etapu |
+| Worker rzuci nieoczekiwany wyjątek | Projekt dostaje status `failed` i wpis w logu — nie zawiesza się na `running` |
+| Projekt wskazuje nieznanego providera | Czysty `failed` z nazwą providera, bez wywracania wątku |
+| Brakuje plików wejściowych do paczki | `delivery` mówi, których plików brakuje, zamiast rzucać `FileNotFoundError` |
+| Upload większy niż limit | Odrzucony po przeczytaniu limitu + 1 bajt, reszta nigdy nie trafia do pamięci |
+
+Po każdym z tych stanów `POST /api/projects/{id}/retry` wznawia pracę od
+pierwszego niedokończonego etapu; ukończone etapy zachowują swoje artefakty.
+
 ### Treść i artefakty
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| POST | `/api/projects/{id}/sources` | Upload `.txt`, `.md`, `.pdf` source files |
+| POST | `/api/projects/{id}/sources` | Upload `.txt`, `.md`, `.pdf` source files (409 while running) |
 | GET | `/api/projects/{id}/events` | Event log (`after_id`, `limit`) |
 | GET | `/api/projects/{id}/artifacts` | Workspace files grouped by category |
 | GET | `/api/projects/{id}/artifacts/preview?path=` | Bounded UTF-8 text preview |
@@ -554,4 +572,23 @@ przez gita.
 
 ## License
 
-AGPL-3.0-only. See [LICENSE](LICENSE).
+**MIT.** Zobacz [LICENSE](LICENSE).
+
+Możesz bez pytania:
+
+- używać programu prywatnie i komercyjnie,
+- zmieniać kod i rozbudowywać go o własne etapy, providerów i formaty,
+- forkować, redystrybuować i sprzedawać — także jako część zamkniętego produktu,
+- publikować i sprzedawać ebooki wyprodukowane tym narzędziem.
+
+Jedyny warunek MIT: zachowaj notę o prawach autorskich i treść licencji
+w kopiach lub istotnych fragmentach oprogramowania. Program jest dostarczany
+„AS IS”, bez gwarancji.
+
+> Projekt był wcześniej wydany na AGPL-3.0-only. Od tej zmiany obowiązuje MIT,
+> licencja maksymalnie permisywna, żeby nikt nie miał wątpliwości, czy wolno mu
+> tego użyć i to rozbudować.
+
+Treść wygenerowana przez pipeline należy do Ciebie — Ebook Factory nie rości
+sobie do niej żadnych praw. Odpowiadasz za prawa do własnych materiałów
+źródłowych i za weryfikację treści przed publikacją.

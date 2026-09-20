@@ -1,5 +1,8 @@
 # Ebook Factory Open-Source Agent v1 — Design Specification
 
+> **Nota historyczna:** ten dokument opisuje stan sprzed zmiany licencji.
+> Projekt jest dziś wydawany na licencji **MIT** (patrz `LICENSE`), nie AGPL-3.0.
+
 ## Goal
 Turn Ebook Factory into a public AGPL-3.0 local-first application whose production pipeline can be operated by either Codex CLI or Claude Code, while preserving the deterministic demo provider and existing API compatibility.
 

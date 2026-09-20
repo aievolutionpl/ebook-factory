@@ -749,6 +749,15 @@ button, a, input, select, textarea {
   text-align: center;
 }
 
+.app-footer p {
+  margin: 0;
+}
+
+.app-footer-build {
+  margin-top: var(--space-1);
+  opacity: 0.8;
+}
+
 .dialog,
 .palette-dialog {
   width: min(720px, calc(100vw - var(--space-5)));

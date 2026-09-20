@@ -700,6 +700,18 @@
     }
   }
 
+  async function loadBuildInfo() {
+    var slot = document.getElementById('build-info');
+    if (!slot) return;
+    try {
+      var response = await apiFetch('/api/version');
+      var info = await response.json();
+      slot.textContent = 'Ebook Factory ' + info.version + ' — licencja ' + info.license;
+    } catch (err) {
+      /* the static footer text already states the license */
+    }
+  }
+
   async function loadArtifacts() {
     if (!state.selectedId) return;
     try {
@@ -2213,6 +2225,7 @@
   initPrefs();
   checkHealth();
   loadProviders();
+  loadBuildInfo();
   loadProjects();
   loadStats();
   setActiveTab('workflow');
