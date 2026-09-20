@@ -541,6 +541,168 @@ def test_rail_shows_portfolio_stats_and_sorting():
     assert "sortProjects" in app_js
 
 
+# ------------------------------------------------------------------ v3 UI
+
+
+def test_connection_status_is_exposed_and_never_colour_only():
+    html = read("index.html")
+    css = read("styles.css")
+    app_js = read("app.js")
+    assert 'id="connection-status"' in html
+    assert 'id="connection-status-text"' in html
+    assert 'role="status"' in html
+    assert "CONNECTION_LABELS" in app_js
+    assert "setConnection" in app_js
+    assert "Brak połączenia" in app_js
+    for selector in (
+        '.connection-pill[data-state="online"]',
+        '.connection-pill[data-state="degraded"]',
+        '.connection-pill[data-state="offline"]',
+    ):
+        assert selector in css
+
+
+def test_keyboard_shortcuts_are_documented_in_a_dialog():
+    html = read("index.html")
+    app_js = read("app.js")
+    assert 'id="shortcuts-dialog"' in html
+    assert 'id="shortcuts-button"' in html
+    assert "<kbd>" in html
+    assert "openShortcuts" in app_js
+    assert "event.key === '?'" in app_js
+
+
+def test_actions_are_guarded_against_double_submission():
+    app_js = read("app.js")
+    assert "actionInFlight" in app_js
+    assert "setBusy" in app_js
+    assert re.search(r"async function runAction\(path, button\) {\s*if \(state\.actionInFlight\) return;", app_js)
+    assert ".btn.is-busy" in read("styles.css")
+
+
+def test_polling_uses_a_recursive_timeout_and_pauses_when_hidden():
+    app_js = read("app.js")
+    assert "setInterval(async function" not in app_js
+    assert "window.setTimeout(pollOnce" in app_js
+    assert "visibilitychange" in app_js
+    assert "document.hidden" in app_js
+
+
+def test_workspace_shows_stage_strip_and_remaining_time_estimate():
+    html = read("index.html")
+    css = read("styles.css")
+    app_js = read("app.js")
+    assert 'id="stage-strip"' in html
+    assert 'id="workspace-timing"' in html
+    assert "renderStageStrip" in app_js
+    assert "estimateRemainingSeconds" in app_js
+    assert "pozostało ok. " in app_js
+    assert '.stage-strip-item[data-stage-status="running"]' in css
+
+
+def test_live_timers_tick_without_refetching():
+    app_js = read("app.js")
+    assert "startTicker" in app_js
+    assert "data-live-duration" in app_js
+    assert "data-live-relative" in app_js
+
+
+def test_command_palette_is_contextual_and_ranks_matches():
+    app_js = read("app.js")
+    assert "matchScore" in app_js
+    assert "fuzzyMatches" in app_js
+    assert "when: function (project)" in app_js
+    assert "aria-disabled=\"true\"" in app_js
+
+
+def test_files_panel_sorts_copies_paths_and_reports_totals():
+    html = read("index.html")
+    app_js = read("app.js")
+    for fragment in ('id="file-sort"', 'id="files-summary"'):
+        assert fragment in html
+    assert "sortArtifactFiles" in app_js
+    assert "data-copy-path" in app_js
+    assert "copyText" in app_js
+    assert "fileBadge" in app_js
+
+
+def test_activity_panel_searches_and_exports_the_log():
+    html = read("index.html")
+    app_js = read("app.js")
+    for fragment in ('id="event-search"', 'id="events-copy"', 'id="events-download"', 'id="events-summary"'):
+        assert fragment in html
+    assert "eventLogText" in app_js
+    assert "downloadTextFile" in app_js
+    assert "formatAbsolute" in app_js
+
+
+def test_settings_changes_are_tracked_and_reversible():
+    html = read("index.html")
+    app_js = read("app.js")
+    assert 'id="settings-dirty"' in html
+    assert 'id="settings-reset"' in html
+    assert "updateSettingsDirty" in app_js
+    assert "resetSettingsForm" in app_js
+    assert "beforeunload" in app_js
+    assert "confirmDiscardSettings" in app_js
+
+
+def test_preview_dialog_supports_copy_wrap_and_pdf():
+    html = read("index.html")
+    app_js = read("app.js")
+    assert 'id="artifact-copy"' in html
+    assert 'id="preview-wrap"' in html
+    assert "preview-frame" in app_js
+    assert "applyPreviewWrap" in app_js
+
+
+def test_rerenders_preserve_keyboard_focus():
+    app_js = read("app.js")
+    assert "captureFocusKey" in app_js
+    assert "restoreFocusKey" in app_js
+    assert "moveProjectFocus" in app_js
+
+
+def test_workspace_preferences_survive_a_reload():
+    app_js = read("app.js")
+    assert "PREFS_STORAGE_KEY" in app_js
+    assert "writePrefs" in app_js
+    assert "readPrefs" in app_js
+
+
+def test_contextual_action_matches_backend_transitions():
+    app_js = read("app.js")
+    # The API refuses /start after a cancel, so the UI must offer /retry there.
+    assert re.search(r"if \(project\.status === 'cancelled'\) return 'retry';", app_js)
+
+
+def test_mobile_workspace_header_keeps_the_title_full_width():
+    css = read("styles.css")
+    mobile = re.search(r"@media \(max-width: 767px\)\s*{(?P<body>.*?)\n}", css, re.S)
+    assert mobile
+    body = mobile.group("body")
+    assert re.search(r"\.workspace-title-block\s*{[^}]*grid-column:\s*1 / -1", body, re.S)
+    assert re.search(r"#shortcuts-button\s*{\s*display:\s*none", body)
+
+
+def test_new_v3_copy_is_polish():
+    html = read("index.html")
+    app_js = read("app.js")
+    for text in (
+        "Skróty klawiszowe",
+        "Niezapisane zmiany",
+        "Przywróć",
+        "Kopiuj log",
+        "Pobierz log",
+        "Szukaj w logu",
+        "Sortowanie plików",
+        "Kopiuj ścieżkę",
+        "Zawijaj długie wiersze",
+        "Połączono",
+    ):
+        assert text in html or text in app_js
+
+
 def test_new_v2_copy_is_polish():
     html = read("index.html")
     app_js = read("app.js")

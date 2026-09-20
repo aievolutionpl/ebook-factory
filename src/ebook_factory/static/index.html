@@ -20,6 +20,11 @@
       <span class="header-context">Workspace Codex</span>
     </div>
     <div class="header-actions">
+      <p class="connection-pill" id="connection-status" data-state="online" role="status">
+        <span class="connection-dot" aria-hidden="true"></span>
+        <span class="connection-text" id="connection-status-text">Połączono</span>
+      </p>
+      <button type="button" class="btn btn-icon" id="shortcuts-button" aria-haspopup="dialog" title="Skróty klawiszowe">Skróty</button>
       <button type="button" class="btn btn-icon" id="theme-toggle" aria-pressed="false" title="Przełącz motyw">Motyw</button>
       <button type="button" class="btn btn-secondary" id="palette-open-button" aria-haspopup="dialog">Ctrl K</button>
       <button type="button" class="btn btn-primary" id="new-project-button">+ Nowy ebook</button>
@@ -75,7 +80,13 @@
         <p class="eyebrow">Brak aktywnego projektu</p>
         <h1>Wybierz projekt albo utwórz nowy ebook.</h1>
         <p>Workspace pokaże proces, pliki, aktywność, źródła i wyniki po wybraniu projektu.</p>
+        <ol class="onboarding-steps">
+          <li><strong>Opisz materiał</strong> — tytuł, temat, tryb i odbiorca w kreatorze.</li>
+          <li><strong>Uruchom produkcję</strong> — 11 etapów od strategii po paczkę ZIP.</li>
+          <li><strong>Sprawdź i pobierz</strong> — podgląd plików, metryki i raport jakości.</li>
+        </ol>
         <button type="button" class="btn btn-primary" id="empty-new-project-button">+ Nowy ebook</button>
+        <p class="empty-state-hint">Skróty: <kbd>N</kbd> nowy projekt · <kbd>Ctrl</kbd>+<kbd>K</kbd> paleta komend · <kbd>?</kbd> pełna lista.</p>
       </section>
 
       <section id="project-detail" class="project-detail" hidden>
@@ -108,6 +119,8 @@
           <div class="progress-bar" role="progressbar" aria-label="Postęp produkcji" aria-valuemin="0" aria-valuemax="100" id="progress-bar">
             <div class="progress-bar-fill" id="progress-bar-fill"></div>
           </div>
+          <ol class="stage-strip" id="stage-strip" aria-hidden="true"></ol>
+          <p class="progress-timing" id="workspace-timing" hidden></p>
         </div>
 
         <dl class="metric-grid" id="workspace-metrics" aria-label="Metryki materiału" hidden></dl>
@@ -132,14 +145,28 @@
               <label for="file-filter">Filtruj pliki</label>
               <input type="search" id="file-filter" autocomplete="off" placeholder="Nazwa pliku">
             </div>
+            <div class="field field-compact field-narrow">
+              <label for="file-sort">Sortowanie plików</label>
+              <select id="file-sort">
+                <option value="path" selected>Ścieżka A-Z</option>
+                <option value="name">Nazwa A-Z</option>
+                <option value="size">Rozmiar malejąco</option>
+                <option value="modified">Ostatnio zmienione</option>
+              </select>
+            </div>
             <button type="button" class="btn btn-secondary" id="files-refresh">Odśwież</button>
           </div>
+          <p class="panel-summary" id="files-summary" aria-live="polite"></p>
           <div class="file-grid" id="workspace-files"></div>
         </section>
 
         <section id="panel-activity" role="tabpanel" aria-labelledby="tab-activity" class="tab-panel" hidden>
           <div class="files-toolbar">
             <div class="field field-compact">
+              <label for="event-search">Szukaj w logu</label>
+              <input type="search" id="event-search" autocomplete="off" placeholder="Treść zdarzenia">
+            </div>
+            <div class="field field-compact field-narrow">
               <label for="event-level-filter">Poziom zdarzeń</label>
               <select id="event-level-filter">
                 <option value="all" selected>Wszystkie</option>
@@ -147,13 +174,19 @@
                 <option value="error">Błędy</option>
               </select>
             </div>
+            <button type="button" class="btn btn-secondary" id="events-copy">Kopiuj log</button>
+            <button type="button" class="btn btn-secondary" id="events-download">Pobierz log</button>
           </div>
+          <p class="panel-summary" id="events-summary" aria-live="polite"></p>
           <ul class="events-log" id="events-log" aria-label="Log zdarzeń"></ul>
         </section>
 
         <section id="panel-settings" role="tabpanel" aria-labelledby="tab-settings" class="tab-panel" hidden>
           <form id="settings-form" class="settings-form">
-            <p class="field-help" id="settings-help">Ustawienia można zmieniać, gdy projekt nie jest uruchomiony. Zmiany wpływają na kolejne etapy.</p>
+            <div class="settings-status">
+              <p class="field-help" id="settings-help">Ustawienia można zmieniać, gdy projekt nie jest uruchomiony. Zmiany wpływają na kolejne etapy.</p>
+              <span class="dirty-badge" id="settings-dirty" hidden>Niezapisane zmiany</span>
+            </div>
             <div class="field">
               <label for="settings-title">Tytuł</label>
               <input type="text" id="settings-title" name="title" required>
@@ -193,6 +226,7 @@
             <p class="form-error" id="settings-error" hidden></p>
             <div class="dialog-actions">
               <button type="submit" class="btn btn-primary" id="settings-save">Zapisz ustawienia</button>
+              <button type="button" class="btn btn-secondary" id="settings-reset">Przywróć</button>
             </div>
           </form>
         </section>
@@ -265,11 +299,33 @@
         <p class="meta" id="artifact-preview-meta"></p>
       </div>
       <div class="preview-actions">
+        <button type="button" class="btn btn-secondary" id="artifact-copy">Kopiuj treść</button>
         <a class="btn btn-secondary" id="artifact-download-link" href="#" download>Pobierz</a>
         <button type="button" class="btn btn-tertiary" id="artifact-preview-close">Zamknij</button>
       </div>
     </div>
+    <label class="checkbox-field" for="preview-wrap">
+      <input type="checkbox" id="preview-wrap" checked>
+      <span>Zawijaj długie wiersze</span>
+    </label>
     <div class="preview-body" id="artifact-preview-body"></div>
+  </dialog>
+
+  <dialog id="shortcuts-dialog" class="dialog shortcuts-dialog" aria-labelledby="shortcuts-dialog-title">
+    <h2 id="shortcuts-dialog-title">Skróty klawiszowe</h2>
+    <dl class="shortcuts-list">
+      <div><dt><kbd>Ctrl</kbd> / <kbd>⌘</kbd> + <kbd>K</kbd></dt><dd>Paleta komend</dd></div>
+      <div><dt><kbd>N</kbd></dt><dd>Nowy ebook</dd></div>
+      <div><dt><kbd>/</kbd></dt><dd>Szukaj w projektach</dd></div>
+      <div><dt><kbd>1</kbd> – <kbd>4</kbd></dt><dd>Proces · Pliki · Aktywność · Ustawienia</dd></div>
+      <div><dt><kbd>R</kbd></dt><dd>Odśwież dane projektu</dd></div>
+      <div><dt><kbd>↑</kbd> <kbd>↓</kbd></dt><dd>Nawigacja po liście projektów</dd></div>
+      <div><dt><kbd>?</kbd></dt><dd>Ten spis skrótów</dd></div>
+      <div><dt><kbd>Esc</kbd></dt><dd>Zamknij panel, menu lub okno</dd></div>
+    </dl>
+    <div class="dialog-actions">
+      <button type="button" class="btn btn-secondary" id="shortcuts-close">Zamknij</button>
+    </div>
   </dialog>
 
   <dialog id="confirm-dialog" class="dialog confirm-dialog" aria-labelledby="confirm-dialog-title">
