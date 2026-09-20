@@ -6,14 +6,24 @@ import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, Optional
+from urllib.parse import quote
 
-from fastapi import APIRouter, FastAPI, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from .models import MAX_SOURCE_MATERIALS_CHARS, Event, Project, ProjectCreate, Stage
+from .models import (
+    MAX_CHAPTER_TITLES,
+    MAX_SOURCE_MATERIALS_CHARS,
+    Event,
+    Project,
+    ProjectCreate,
+    Stage,
+    normalize_chapter_titles,
+)
 from .pipeline import PipelineRunner
 from .providers import provider_statuses
+from . import workspace
 from .sources import (
     MAX_SOURCE_FILES_PER_PROJECT,
     SourceUploadError,
@@ -34,6 +44,22 @@ class ProjectCreateRequest(BaseModel):
     tone: str = ""
     source_materials: Optional[str] = Field(default=None, max_length=MAX_SOURCE_MATERIALS_CHARS)
     provider: Literal["demo", "codex-cli", "claude-code"] = "demo"
+    chapter_titles: list[str] = Field(default_factory=list, max_length=MAX_CHAPTER_TITLES)
+
+
+class ProjectUpdateRequest(BaseModel):
+    """Partial update for a project that is not currently running."""
+
+    title: Optional[str] = Field(default=None, min_length=1)
+    topic: Optional[str] = Field(default=None, min_length=1)
+    mode: Optional[Literal["lead-magnet", "guide", "premium"]] = None
+    language: Optional[str] = None
+    audience: Optional[str] = None
+    brand: Optional[str] = None
+    tone: Optional[str] = None
+    source_materials: Optional[str] = Field(default=None, max_length=MAX_SOURCE_MATERIALS_CHARS)
+    provider: Optional[Literal["demo", "codex-cli", "claude-code"]] = None
+    chapter_titles: Optional[list[str]] = Field(default=None, max_length=MAX_CHAPTER_TITLES)
 
 
 def _project_dict(project: Project, stages: Optional[list[Stage]] = None) -> dict:
@@ -48,6 +74,7 @@ def _project_dict(project: Project, stages: Optional[list[Stage]] = None) -> dic
         "brand": project.brand,
         "tone": project.tone,
         "provider": project.provider,
+        "chapter_titles": list(project.chapter_titles or []),
         "status": project.status,
         "progress": project.progress,
         "created_at": project.created_at,
@@ -146,6 +173,15 @@ class WorkerRegistry:
             state.cancel_requested = True
             state.stop_event.set()
 
+    def forget(self, project_id: str) -> None:
+        """Drop bookkeeping for a project that no longer exists.
+
+        Only safe once the worker has finished; callers must check
+        ``is_running`` first (the delete endpoint does).
+        """
+        with self._lock:
+            self._states.pop(project_id, None)
+
     def join_all(self, timeout: Optional[float] = None) -> None:
         with self._lock:
             states = list(self._states.values())
@@ -177,6 +213,18 @@ def build_router(
     def providers() -> list[dict[str, object]]:
         return provider_statuses()
 
+    @router.get("/api/stats")
+    def stats() -> dict:
+        """Portfolio counters for the workspace dashboard."""
+        counts = repository.count_projects_by_status()
+        return {
+            "total": sum(counts.values()),
+            "by_status": counts,
+            "running": counts.get("running", 0),
+            "completed": counts.get("completed", 0),
+            "failed": counts.get("failed", 0),
+        }
+
     @router.post("/api/projects", status_code=201)
     def create_project(payload: ProjectCreateRequest) -> dict:
         try:
@@ -190,6 +238,7 @@ def build_router(
                 tone=payload.tone,
                 source_materials=payload.source_materials,
                 provider=payload.provider,
+                chapter_titles=payload.chapter_titles,
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -206,6 +255,62 @@ def build_router(
         project = _get_project_or_404(project_id)
         stages = repository.list_stages(project_id)
         return _project_dict(project, stages)
+
+    @router.patch("/api/projects/{project_id}")
+    def update_project(project_id: str, payload: ProjectUpdateRequest) -> dict:
+        project = _get_project_or_404(project_id)
+        if project.status == "running" or registry.is_running(project_id):
+            raise HTTPException(
+                status_code=409, detail="cannot edit a project while it is running"
+            )
+        fields = payload.model_dump(exclude_unset=True)
+        for key in ("title", "topic"):
+            if key in fields and not str(fields[key]).strip():
+                raise HTTPException(status_code=422, detail=f"{key} must not be empty")
+        if "chapter_titles" in fields:
+            try:
+                fields["chapter_titles"] = normalize_chapter_titles(fields["chapter_titles"])
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+        if not fields:
+            return _project_dict(project, repository.list_stages(project_id))
+        updated = repository.update_project(project_id, **fields)
+        repository.append_event(
+            project_id, "info", "project settings updated: " + ", ".join(sorted(fields))
+        )
+        return _project_dict(updated, repository.list_stages(project_id))
+
+    @router.post("/api/projects/{project_id}/duplicate", status_code=201)
+    def duplicate_project(project_id: str) -> dict:
+        """Clone a project's settings into a fresh draft, without its artifacts."""
+        project = _get_project_or_404(project_id)
+        data = ProjectCreate(
+            title=f"{project.title} (kopia)",
+            topic=project.topic,
+            mode=project.mode,
+            language=project.language,
+            audience=project.audience,
+            brand=project.brand,
+            tone=project.tone,
+            source_materials=project.source_materials,
+            provider=project.provider,
+            chapter_titles=list(project.chapter_titles or []),
+        )
+        clone = repository.create_project(data)
+        repository.append_event(clone.id, "info", f"duplicated from {project.slug}")
+        return _project_dict(clone, repository.list_stages(clone.id))
+
+    @router.delete("/api/projects/{project_id}", status_code=200)
+    def delete_project(project_id: str) -> dict:
+        project = _get_project_or_404(project_id)
+        if registry.is_running(project_id):
+            raise HTTPException(
+                status_code=409, detail="cannot delete a project while it is running"
+            )
+        workspace.delete_project_workspace(projects_root / project.slug)
+        repository.delete_project(project_id)
+        registry.forget(project_id)
+        return {"deleted": project_id, "slug": project.slug}
 
     @router.post("/api/projects/{project_id}/start", status_code=202)
     def start_project(project_id: str) -> dict:
@@ -235,6 +340,31 @@ def build_router(
             raise HTTPException(status_code=409, detail="project is already running")
         if project.status != "paused":
             raise HTTPException(status_code=409, detail="project is not paused")
+        registry.start(project_id, runner, repository)
+        return _project_dict(repository.get_project(project_id))
+
+    @router.post("/api/projects/{project_id}/retry", status_code=202)
+    def retry_project(project_id: str) -> dict:
+        """Replay a stopped run from its first unfinished stage.
+
+        Completed stages keep their artifacts; the first failed stage and
+        everything after it are reset to pending so attempts start from zero.
+        """
+        project = _get_project_or_404(project_id)
+        if registry.is_running(project_id):
+            raise HTTPException(status_code=409, detail="project is already running")
+        if project.status not in ("failed", "cancelled", "paused"):
+            raise HTTPException(
+                status_code=409, detail="only stopped projects can be retried"
+            )
+        stages = repository.list_stages(project_id)
+        unfinished = [s for s in stages if s.status != "completed"]
+        if not unfinished:
+            raise HTTPException(status_code=409, detail="nothing to retry")
+        first = min(unfinished, key=lambda s: s.position)
+        repository.reset_stages_from(project_id, first.position)
+        repository.update_project(project_id, status="draft", error=None)
+        repository.append_event(project_id, "info", f"retry requested from {first.name}")
         registry.start(project_id, runner, repository)
         return _project_dict(repository.get_project(project_id))
 
@@ -302,9 +432,91 @@ def build_router(
         return results
 
     @router.get("/api/projects/{project_id}/events")
-    def list_events(project_id: str) -> list[dict]:
+    def list_events(
+        project_id: str,
+        after_id: Optional[str] = Query(default=None),
+        limit: Optional[int] = Query(default=None, ge=1, le=1000),
+    ) -> list[dict]:
         _get_project_or_404(project_id)
-        return [_event_dict(e) for e in repository.list_events(project_id)]
+        events = repository.list_events(project_id, after_id=after_id, limit=limit)
+        return [_event_dict(e) for e in events]
+
+    @router.get("/api/projects/{project_id}/artifacts")
+    def list_artifacts(project_id: str) -> dict:
+        """Group every real file in the project workspace for the file browser."""
+        project = _get_project_or_404(project_id)
+        groups = workspace.list_artifact_groups(projects_root / project.slug)
+        return {
+            "groups": workspace.artifact_groups_to_dicts(groups),
+            "count": sum(len(group.files) for group in groups),
+            "total_bytes": sum(f.bytes for group in groups for f in group.files),
+        }
+
+    @router.get("/api/projects/{project_id}/metrics")
+    def project_metrics(project_id: str) -> dict:
+        """Word/page/chapter counters recomputed from the files on disk."""
+        project = _get_project_or_404(project_id)
+        return workspace.compute_metrics(projects_root / project.slug)
+
+    def _resolve_or_http(project: Project, path: str) -> Path:
+        try:
+            return workspace.resolve_artifact(projects_root / project.slug, path)
+        except workspace.ArtifactAccessDenied as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except workspace.ArtifactNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @router.get("/api/projects/{project_id}/artifacts/preview")
+    def preview_artifact(project_id: str, path: str = Query(...)) -> dict:
+        project = _get_project_or_404(project_id)
+        resolved = _resolve_or_http(project, path)
+        kind, media_type, previewable = workspace.classify(resolved)
+        if not previewable:
+            raise HTTPException(
+                status_code=415, detail=f"{kind} artifacts cannot be previewed as text"
+            )
+        text, truncated = workspace.read_preview(resolved)
+        return {
+            "path": path,
+            "name": resolved.name,
+            "kind": kind,
+            "media_type": media_type,
+            "bytes": resolved.stat().st_size,
+            "truncated": truncated,
+            "text": text,
+        }
+
+    @router.get("/api/projects/{project_id}/artifacts/raw")
+    def raw_artifact(
+        project_id: str,
+        path: str = Query(...),
+        download: bool = Query(default=False),
+    ):
+        """Serve one artifact.
+
+        Only images and PDFs are served inline. Everything else - including
+        generated HTML and SVG, which can carry script - is forced to download
+        so workspace output can never execute against the app's own origin.
+        """
+        project = _get_project_or_404(project_id)
+        resolved = _resolve_or_http(project, path)
+        kind, media_type, _previewable = workspace.classify(resolved)
+        inline_ok = kind == "pdf" or (
+            kind == "image" and resolved.suffix.lower() != ".svg"
+        )
+        disposition = "inline" if inline_ok and not download else "attachment"
+        if disposition == "attachment":
+            media_type = "application/octet-stream"
+        safe_name = quote(resolved.name)
+        return FileResponse(
+            path=resolved,
+            media_type=media_type,
+            headers={
+                "X-Content-Type-Options": "nosniff",
+                "Content-Disposition": f"{disposition}; filename*=UTF-8''{safe_name}",
+                "Content-Security-Policy": "default-src 'none'; sandbox",
+            },
+        )
 
     @router.get("/api/projects/{project_id}/download")
     def download_project(project_id: str):

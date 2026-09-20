@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS projects (
     tone TEXT NOT NULL,
     source_materials TEXT,
     provider TEXT NOT NULL DEFAULT 'demo',
+    chapter_titles TEXT NOT NULL DEFAULT '[]',
     status TEXT NOT NULL,
     progress INTEGER NOT NULL,
     created_at TEXT NOT NULL,
@@ -65,6 +66,16 @@ CREATE INDEX IF NOT EXISTS idx_events_project ON events(project_id, timestamp);
 """
 
 
+def _decode_chapter_titles(raw: Optional[str]) -> list[str]:
+    if not raw:
+        return []
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError:
+        return []
+    return [str(item) for item in value] if isinstance(value, list) else []
+
+
 def _row_to_project(row: sqlite3.Row) -> Project:
     return Project(
         id=row["id"],
@@ -78,6 +89,7 @@ def _row_to_project(row: sqlite3.Row) -> Project:
         tone=row["tone"],
         source_materials=row["source_materials"],
         provider=row["provider"],
+        chapter_titles=_decode_chapter_titles(row["chapter_titles"]),
         status=row["status"],
         progress=row["progress"],
         created_at=row["created_at"],
@@ -138,6 +150,10 @@ class ProjectRepository:
             self._conn.execute(
                 "ALTER TABLE projects ADD COLUMN provider TEXT NOT NULL DEFAULT 'demo'"
             )
+        if "chapter_titles" not in columns:
+            self._conn.execute(
+                "ALTER TABLE projects ADD COLUMN chapter_titles TEXT NOT NULL DEFAULT '[]'"
+            )
 
     def close(self) -> None:
         with self._lock:
@@ -165,8 +181,9 @@ class ProjectRepository:
                 """
                 INSERT INTO projects (
                     id, slug, title, topic, mode, language, audience, brand, tone,
-                    source_materials, provider, status, progress, created_at, updated_at, error
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    source_materials, provider, chapter_titles, status, progress,
+                    created_at, updated_at, error
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     project_id,
@@ -180,6 +197,7 @@ class ProjectRepository:
                     data.tone,
                     data.source_materials,
                     data.provider,
+                    json.dumps(data.chapter_titles, ensure_ascii=False),
                     "draft",
                     0,
                     now,
@@ -249,6 +267,7 @@ class ProjectRepository:
                 "tone",
                 "source_materials",
                 "provider",
+                "chapter_titles",
                 "status",
                 "progress",
                 "error",
@@ -256,6 +275,10 @@ class ProjectRepository:
             unknown = set(fields) - allowed
             if unknown:
                 raise ValueError(f"cannot update unknown fields: {unknown}")
+            if isinstance(fields.get("chapter_titles"), list):
+                fields["chapter_titles"] = json.dumps(
+                    fields["chapter_titles"], ensure_ascii=False
+                )
             fields["updated_at"] = utcnow_iso()
             assignments = ", ".join(f"{key} = ?" for key in fields)
             values = list(fields.values()) + [project_id]
@@ -330,10 +353,72 @@ class ProjectRepository:
                 message=message,
             )
 
-    def list_events(self, project_id: str) -> list[Event]:
+    def list_events(
+        self,
+        project_id: str,
+        after_id: Optional[str] = None,
+        limit: Optional[int] = None,
+    ) -> list[Event]:
+        """List events oldest first.
+
+        ``after_id`` returns only events appended after that event, which lets
+        a polling client fetch deltas instead of the whole log every tick. An
+        unknown ``after_id`` is treated as "from the beginning".
+        """
+        with self._lock:
+            params: list = [project_id]
+            query = "SELECT * FROM events WHERE project_id = ?"
+            if after_id:
+                row = self._conn.execute(
+                    "SELECT rowid FROM events WHERE id = ? AND project_id = ?",
+                    (after_id, project_id),
+                ).fetchone()
+                if row is not None:
+                    query += " AND rowid > ?"
+                    params.append(row["rowid"])
+            query += " ORDER BY timestamp ASC, rowid ASC"
+            if limit is not None and limit > 0:
+                query += " LIMIT ?"
+                params.append(limit)
+            rows = self._conn.execute(query, params).fetchall()
+            return [_row_to_event(row) for row in rows]
+
+    def count_projects_by_status(self) -> dict[str, int]:
         with self._lock:
             rows = self._conn.execute(
-                "SELECT * FROM events WHERE project_id = ? ORDER BY timestamp ASC, rowid ASC",
-                (project_id,),
+                "SELECT status, COUNT(*) AS total FROM projects GROUP BY status"
             ).fetchall()
-            return [_row_to_event(row) for row in rows]
+            return {row["status"]: row["total"] for row in rows}
+
+    def delete_project(self, project_id: str) -> bool:
+        """Remove a project and its stage/event rows. Returns False if unknown."""
+        with self._lock:
+            existing = self._conn.execute(
+                "SELECT id FROM projects WHERE id = ?", (project_id,)
+            ).fetchone()
+            if existing is None:
+                return False
+            self._conn.execute("DELETE FROM events WHERE project_id = ?", (project_id,))
+            self._conn.execute("DELETE FROM stages WHERE project_id = ?", (project_id,))
+            self._conn.execute("DELETE FROM projects WHERE id = ?", (project_id,))
+            self._conn.commit()
+            return True
+
+    def reset_stages_from(self, project_id: str, position: int) -> int:
+        """Reset every stage at or after ``position`` back to pending.
+
+        Used by the retry endpoint so a failed run can be replayed from the
+        first broken stage without rebuilding the earlier, still-valid ones.
+        """
+        with self._lock:
+            cursor = self._conn.execute(
+                """
+                UPDATE stages
+                SET status = 'pending', attempts = 0, started_at = NULL,
+                    finished_at = NULL, message = '', artifact_paths = '[]'
+                WHERE project_id = ? AND position >= ?
+                """,
+                (project_id, position),
+            )
+            self._conn.commit()
+            return cursor.rowcount
