@@ -32,6 +32,25 @@ def sanitize_source_filename(filename: str) -> str:
     return safe or "file"
 
 
+def read_bounded(stream, limit: int = MAX_SOURCE_FILE_BYTES) -> bytes:
+    """Read at most ``limit + 1`` bytes from a file-like upload stream.
+
+    Reading the whole stream first and checking its size afterwards means a
+    client can make the server hold an arbitrarily large payload before it is
+    rejected. Stopping one byte past the limit is enough to know the upload is
+    too big, and caps what an oversized request can ever cost.
+    """
+    chunks: list[bytes] = []
+    remaining = limit + 1
+    while remaining > 0:
+        chunk = stream.read(min(remaining, 64 * 1024))
+        if not chunk:
+            break
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    return b"".join(chunks)
+
+
 def validate_source_upload(filename: str, content: bytes) -> None:
     """Raise SourceUploadError if the extension, size, or content is invalid."""
     suffix = Path(filename).suffix.lower()

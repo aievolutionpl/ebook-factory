@@ -12,9 +12,13 @@ from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
+from . import LICENSE, __version__
 from .models import (
     MAX_CHAPTER_TITLES,
     MAX_SOURCE_MATERIALS_CHARS,
+    PROJECT_MODES,
+    PROJECT_PROVIDERS,
+    STAGE_DEFINITIONS,
     Event,
     Project,
     ProjectCreate,
@@ -29,6 +33,7 @@ from .sources import (
     SourceUploadError,
     count_existing_source_files,
     extract_text,
+    read_bounded,
     store_source_file,
     validate_source_upload,
 )
@@ -155,7 +160,23 @@ class WorkerRegistry:
             state.cancel_requested = False
 
             def _worker() -> None:
-                result = runner.run(project_id, stop_requested=state.stop_event.is_set)
+                # A worker thread has no caller to propagate to: an escaping
+                # exception would be swallowed by threading and leave the
+                # project stuck on "running" forever, with the UI polling a
+                # status that can never change. Convert any crash into the
+                # same reportable "failed" state a stage failure produces.
+                try:
+                    result = runner.run(project_id, stop_requested=state.stop_event.is_set)
+                except BaseException as exc:  # noqa: BLE001 - last line of defence
+                    message = f"worker crashed: {type(exc).__name__}: {exc}"
+                    try:
+                        repository.update_project(
+                            project_id, status="failed", error=message
+                        )
+                        repository.append_event(project_id, "error", message)
+                    except Exception:  # noqa: BLE001 - nothing left to report to
+                        pass
+                    return
                 if state.cancel_requested and result.status == "paused":
                     repository.update_project(project_id, status="cancelled")
 
@@ -208,6 +229,18 @@ def build_router(
     @router.get("/health")
     def health() -> dict:
         return {"status": "ok"}
+
+    @router.get("/api/version")
+    def version() -> dict:
+        """Build identity, so a fork or a deployment can be told apart."""
+        return {
+            "name": "ebook-factory",
+            "version": __version__,
+            "license": LICENSE,
+            "stages": len(STAGE_DEFINITIONS),
+            "modes": list(PROJECT_MODES),
+            "providers": list(PROJECT_PROVIDERS),
+        }
 
     @router.get("/api/providers")
     def providers() -> list[dict[str, object]]:
@@ -383,11 +416,16 @@ def build_router(
         project_id: str, files: list[UploadFile] = File(...)
     ) -> list[dict]:
         project = _get_project_or_404(project_id)
+        if project.status == "running" or registry.is_running(project_id):
+            raise HTTPException(
+                status_code=409,
+                detail="cannot add source files while the project is running",
+            )
         project_dir = projects_root / project.slug
 
         uploads: list[tuple[str, bytes]] = []
         for upload in files:
-            content = upload.file.read()
+            content = read_bounded(upload.file)
             try:
                 validate_source_upload(upload.filename or "", content)
             except SourceUploadError as exc:

@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from .models import MAX_STAGE_ATTEMPTS, STAGE_DEFINITIONS, Project, Stage, utcnow_iso
-from .providers import AgentRequest, get_provider
+from .providers import AgentProvider, AgentRequest, get_provider
 from .repository import ProjectRepository
 
 StageHandler = Callable[[Project, Path], "StageResult"]
@@ -77,6 +77,12 @@ class PipelineRunner:
             f"Materialy zrodlowe (skrocone):\n{source or 'brak'}\n"
         )
 
+    def _fail(self, project_id: str, error: str, event: Optional[str] = None) -> Project:
+        """Record a terminal failure and return the refreshed project."""
+        self.repository.update_project(project_id, status="failed", error=error)
+        self.repository.append_event(project_id, "error", event or error)
+        return self.repository.get_project(project_id)  # type: ignore[return-value]
+
     def run(self, project_id: str, stop_requested: Callable[[], bool] = lambda: False) -> Project:
         project = self.repository.get_project(project_id)
         if project is None:
@@ -88,13 +94,16 @@ class PipelineRunner:
         project_dir = self._ensure_project_dir(project)
         stages = self.repository.list_stages(project_id)
         total = len(stages)
-        provider = get_provider(project.provider)
+        try:
+            provider = get_provider(project.provider)
+        except ValueError as exc:
+            # A stored row can name a provider this build does not have (an
+            # older export, a downgrade, a hand-edited database). That is a
+            # data problem to report, not a reason to take the worker down.
+            return self._fail(project_id, str(exc))
 
         if not provider.available():
-            message = f"provider {project.provider} is not available"
-            self.repository.update_project(project_id, status="failed", error=message)
-            self.repository.append_event(project_id, "error", message)
-            return self.repository.get_project(project_id)  # type: ignore[return-value]
+            return self._fail(project_id, f"provider {project.provider} is not available")
 
         self.repository.update_project(project_id, status="running", error=None)
 
@@ -102,12 +111,13 @@ class PipelineRunner:
             if stage.status == "completed":
                 continue
 
-            success = self._run_stage_with_retries(project, project_dir, stage)
+            success = self._run_stage_with_retries(project, project_dir, stage, provider)
             if not success:
-                error_message = f"{stage.name}: {stage.message}"
-                self.repository.update_project(project_id, status="failed", error=error_message)
-                self.repository.append_event(project_id, "error", f"project failed at {stage.name}")
-                return self.repository.get_project(project_id)  # type: ignore[return-value]
+                return self._fail(
+                    project_id,
+                    f"{stage.name}: {stage.message}",
+                    event=f"project failed at {stage.name}",
+                )
 
             progress = round(((stage.position + 1) / total) * 100)
             self.repository.update_project(project_id, progress=progress)
@@ -120,9 +130,14 @@ class PipelineRunner:
         self.repository.append_event(project_id, "info", "project completed")
         return self.repository.get_project(project_id)  # type: ignore[return-value]
 
-    def _run_stage_with_retries(self, project: Project, project_dir: Path, stage: Stage) -> bool:
+    def _run_stage_with_retries(
+        self,
+        project: Project,
+        project_dir: Path,
+        stage: Stage,
+        provider: AgentProvider,
+    ) -> bool:
         handler = self.stage_handlers[stage.name]
-        provider = get_provider(project.provider)
         while stage.attempts < MAX_STAGE_ATTEMPTS:
             stage.status = "running"
             stage.attempts += 1
@@ -153,7 +168,10 @@ class PipelineRunner:
                             "info",
                             f"provider={project.provider} stage={stage.name} completed",
                         )
-                        agent_artifacts = [f"agent/{stage.name}.md"]
+                        # A provider can exit 0 without writing anything; do
+                        # not advertise an artifact the file browser cannot open.
+                        if output_file.is_file():
+                            agent_artifacts = [f"agent/{stage.name}.md"]
                         result = handler(project, project_dir)
                         result.artifact_paths = agent_artifacts + result.artifact_paths
                 else:

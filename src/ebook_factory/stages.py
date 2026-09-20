@@ -618,6 +618,18 @@ def delivery_stage(project: Project, project_dir: Path) -> StageResult:
         "ads.md": project_dir / "marketing" / "ads.md",
         "qa-report.md": project_dir / "qa" / "qa-report.md",
     }
+    missing = [name for name, source in sources.items() if not source.is_file()]
+    if missing:
+        # Resuming a half-built workspace should say what is absent, not raise
+        # a FileNotFoundError that reaches the operator as a bare stack string.
+        return StageResult(
+            False,
+            "missing required build outputs: "
+            + ", ".join(sorted(missing))
+            + " — retry the project from the stage that produces them",
+        )
+
+    delivery_dir.mkdir(parents=True, exist_ok=True)
     for name, source in sources.items():
         shutil.copyfile(source, delivery_dir / name)
 

@@ -28,20 +28,31 @@ def test_required_open_source_release_files_exist():
         assert (ROOT / path).is_file(), f"missing {path}"
 
 
-def test_license_is_agpl_3_only():
+def test_license_is_permissive_mit():
+    """The project ships under MIT so anyone may use, modify and redistribute it."""
     license_text = read("LICENSE")
     pyproject = read("pyproject.toml")
-    assert "GNU AFFERO GENERAL PUBLIC LICENSE" in license_text
-    assert "Version 3, 19 November 2007" in license_text
-    assert "AGPL-3.0-only" in pyproject
-    assert "MIT" not in pyproject
-    assert "Apache" not in pyproject
+    assert "MIT License" in license_text
+    assert "Permission is hereby granted, free of charge" in license_text
+    for right in ("use", "copy", "modify", "merge", "publish", "distribute", "sublicense"):
+        assert right in license_text
+    assert 'license = "MIT"' in pyproject
+    assert "AGPL" not in license_text
+    assert "AGPL" not in pyproject
+
+
+def test_readme_and_contributing_state_the_mit_terms():
+    readme = read("README.md")
+    contributing = read("CONTRIBUTING.md")
+    assert "MIT" in readme
+    assert "[LICENSE](LICENSE)" in readme
+    assert "MIT-licensed" in contributing
 
 
 def test_readme_public_release_contract():
     readme = read("README.md")
     for fragment in (
-        "AGPL-3.0-only",
+        "MIT",
         "```mermaid",
         "Quick start",
         "Codex CLI",
