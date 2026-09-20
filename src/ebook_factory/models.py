@@ -27,6 +27,8 @@ STAGE_STATUSES: tuple[str, ...] = (
 )
 MAX_STAGE_ATTEMPTS = 3
 MAX_SOURCE_MATERIALS_CHARS = 50_000
+MAX_CHAPTER_TITLES = 40
+MAX_CHAPTER_TITLE_CHARS = 160
 
 
 class StageDefinition(NamedTuple):
@@ -79,6 +81,34 @@ def slugify(value: str) -> str:
     return slug or "project"
 
 
+def normalize_chapter_titles(titles: Optional[list[str]]) -> list[str]:
+    """Trim, de-duplicate and bound a user-supplied chapter structure.
+
+    An empty result means "let the mode preset decide"; the outline stage
+    falls back to the built-in template list in that case.
+    """
+    if not titles:
+        return []
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for raw in titles:
+        title = " ".join(str(raw).split())
+        if not title:
+            continue
+        if len(title) > MAX_CHAPTER_TITLE_CHARS:
+            raise ValueError(
+                f"chapter title must not exceed {MAX_CHAPTER_TITLE_CHARS} characters"
+            )
+        key = title.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(title)
+    if len(cleaned) > MAX_CHAPTER_TITLES:
+        raise ValueError(f"at most {MAX_CHAPTER_TITLES} chapter titles are allowed")
+    return cleaned
+
+
 @dataclass
 class ProjectCreate:
     title: str
@@ -90,6 +120,7 @@ class ProjectCreate:
     tone: str = ""
     source_materials: Optional[str] = None
     provider: str = "demo"
+    chapter_titles: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if not self.title or not self.title.strip():
@@ -108,6 +139,7 @@ class ProjectCreate:
             raise ValueError(
                 f"source_materials must not exceed {MAX_SOURCE_MATERIALS_CHARS} characters"
             )
+        self.chapter_titles = normalize_chapter_titles(self.chapter_titles)
 
 
 @dataclass
@@ -128,6 +160,7 @@ class Project:
     updated_at: str
     error: Optional[str] = None
     provider: str = "demo"
+    chapter_titles: list[str] = field(default_factory=list)
 
 
 @dataclass

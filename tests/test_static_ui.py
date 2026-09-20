@@ -408,3 +408,149 @@ def test_tablet_uses_project_drawer_and_calm_dimensions():
         css,
         re.S,
     )
+
+
+# ------------------------------------------------------------------ v2 UI
+
+
+def test_file_browser_uses_the_real_artifact_api_not_a_hardcoded_list():
+    app_js = read("app.js")
+    assert "/artifacts" in app_js
+    assert "loadArtifacts" in app_js
+    assert "artifacts/preview" in app_js
+    assert "artifacts/raw" in app_js
+    # The old placeholder rows must be gone.
+    assert "Zapisane przez istniejące API uploadu" not in app_js
+    assert "'marketing pack'" not in app_js
+
+
+def test_files_panel_exposes_filter_and_refresh_controls():
+    html = read("index.html")
+    for fragment in ('id="file-filter"', 'id="files-refresh"', 'id="workspace-files"'):
+        assert fragment in html
+
+
+def test_artifact_preview_dialog_is_accessible_and_offers_download():
+    html = read("index.html")
+    app_js = read("app.js")
+    for fragment in (
+        'id="artifact-preview"',
+        'id="artifact-preview-title"',
+        'id="artifact-preview-body"',
+        'id="artifact-download-link"',
+        'id="artifact-preview-close"',
+    ):
+        assert fragment in html
+    assert "openArtifactPreview" in app_js
+    assert "escapeHtml(payload.text)" in app_js
+
+
+def test_metrics_grid_is_rendered_from_the_metrics_endpoint():
+    html = read("index.html")
+    app_js = read("app.js")
+    assert 'id="workspace-metrics"' in html
+    assert "/metrics" in app_js
+    assert "renderMetrics" in app_js
+    for label in ("Rozdziały", "Słowa", "Strony (szac.)", "Czas czytania"):
+        assert label in app_js
+
+
+def test_settings_panel_patches_the_project():
+    html = read("index.html")
+    app_js = read("app.js")
+    assert 'id="panel-settings"' in html
+    assert 'id="settings-form"' in html
+    assert "'PATCH'" in app_js
+    assert "saveSettings" in app_js
+    for field_id in (
+        "settings-title",
+        "settings-topic",
+        "settings-mode",
+        "settings-audience",
+        "settings-brand",
+        "settings-tone",
+        "settings-language",
+        "settings-chapters",
+    ):
+        assert f'id="{field_id}"' in html
+
+
+def test_project_menu_exposes_retry_duplicate_and_delete():
+    html = read("index.html")
+    app_js = read("app.js")
+    for action in ("retry", "duplicate", "delete", "edit"):
+        assert f'data-action="{action}"' in html
+    assert "duplicateCurrentProject" in app_js
+    assert "deleteCurrentProject" in app_js
+    assert "'/retry'" in app_js or "/retry" in app_js
+    assert "'DELETE'" in app_js
+
+
+def test_destructive_delete_is_confirmed_before_it_runs():
+    html = read("index.html")
+    app_js = read("app.js")
+    assert 'id="confirm-dialog"' in html
+    assert "askConfirmation" in app_js
+    delete_index = app_js.find("function deleteCurrentProject")
+    confirm_index = app_js.find("askConfirmation", delete_index)
+    fetch_index = app_js.find("method: 'DELETE'", delete_index)
+    assert delete_index != -1 and confirm_index != -1 and fetch_index != -1
+    assert confirm_index < fetch_index
+
+
+def test_theme_toggle_persists_the_choice_and_css_defines_a_light_palette():
+    html = read("index.html")
+    app_js = read("app.js")
+    css = read("styles.css")
+    assert 'id="theme-toggle"' in html
+    assert "localStorage" in app_js
+    assert "applyTheme" in app_js
+    assert ':root[data-theme="light"]' in css
+    assert "--color-bg: hsl(" in css
+
+
+def test_chapter_structure_can_be_supplied_in_the_wizard():
+    html = read("index.html")
+    app_js = read("app.js")
+    assert 'id="field-chapter-titles"' in html
+    assert "parseChapterTitles" in app_js
+    assert "payload.chapter_titles" in app_js
+
+
+def test_stage_rows_expose_progress_detail_without_leaking_raw_stage_ids():
+    app_js = read("app.js")
+    assert "STAGE_HINTS" in app_js
+    assert "formatDuration" in app_js
+    assert "stage-artifacts" in app_js
+    assert "escapeHtml(stage.name)" not in app_js
+
+
+def test_polling_backs_off_when_a_project_is_not_running():
+    app_js = read("app.js")
+    assert "POLL_INTERVAL_ACTIVE" in app_js
+    assert "POLL_INTERVAL_IDLE" in app_js
+    assert "after_id=" in app_js
+
+
+def test_rail_shows_portfolio_stats_and_sorting():
+    html = read("index.html")
+    app_js = read("app.js")
+    for fragment in ('id="stat-running"', 'id="stat-completed"', 'id="stat-failed"', 'id="project-sort"'):
+        assert fragment in html
+    assert "/api/stats" in app_js
+    assert "sortProjects" in app_js
+
+
+def test_new_v2_copy_is_polish():
+    html = read("index.html")
+    app_js = read("app.js")
+    for text in (
+        "Ustawienia",
+        "Podgląd",
+        "Pobierz",
+        "Duplikuj projekt",
+        "Usuń projekt",
+        "Ponów",
+        "Struktura rozdziałów",
+    ):
+        assert text in html or text in app_js

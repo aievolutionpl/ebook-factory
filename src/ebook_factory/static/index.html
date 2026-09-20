@@ -20,6 +20,7 @@
       <span class="header-context">Workspace Codex</span>
     </div>
     <div class="header-actions">
+      <button type="button" class="btn btn-icon" id="theme-toggle" aria-pressed="false" title="Przełącz motyw">Motyw</button>
       <button type="button" class="btn btn-secondary" id="palette-open-button" aria-haspopup="dialog">Ctrl K</button>
       <button type="button" class="btn btn-primary" id="new-project-button">+ Nowy ebook</button>
     </div>
@@ -33,9 +34,23 @@
         <span class="rail-count" id="project-count">0</span>
       </div>
       <button type="button" class="btn btn-primary btn-block rail-new-project" id="rail-new-project-button">+ Nowy ebook</button>
+      <dl class="rail-stats" id="rail-stats" aria-label="Podsumowanie portfela">
+        <div><dt>W trakcie</dt><dd id="stat-running">0</dd></div>
+        <div><dt>Gotowe</dt><dd id="stat-completed">0</dd></div>
+        <div><dt>Błędy</dt><dd id="stat-failed">0</dd></div>
+      </dl>
       <div class="field field-compact">
         <label for="project-search">Szukaj</label>
         <input type="search" id="project-search" autocomplete="off" placeholder="Tytuł, temat, status">
+      </div>
+      <div class="field field-compact">
+        <label for="project-sort">Sortowanie</label>
+        <select id="project-sort">
+          <option value="recent" selected>Ostatnio zmienione</option>
+          <option value="created">Najnowsze</option>
+          <option value="title">Tytuł A-Z</option>
+          <option value="progress">Postęp</option>
+        </select>
       </div>
       <div class="status-filters" aria-label="Filtry statusu">
         <button type="button" class="filter-chip is-active" data-status-filter="all">Wszystkie</button>
@@ -74,6 +89,15 @@
           </div>
           <span class="status-chip" id="detail-status"></span>
           <button type="button" class="btn btn-primary contextual-action" id="workspace-primary-action">Start</button>
+          <div class="overflow-menu">
+            <button type="button" class="btn btn-secondary" id="project-menu-button" aria-haspopup="true" aria-expanded="false" aria-controls="project-menu">Więcej</button>
+            <div class="menu-popover" id="project-menu" role="menu" hidden>
+              <button type="button" role="menuitem" data-action="retry">Ponów od błędu</button>
+              <button type="button" role="menuitem" data-action="edit">Edytuj ustawienia</button>
+              <button type="button" role="menuitem" data-action="duplicate">Duplikuj projekt</button>
+              <button type="button" role="menuitem" data-action="delete" class="is-danger">Usuń projekt</button>
+            </div>
+          </div>
         </div>
 
         <div class="progress-cluster">
@@ -86,6 +110,8 @@
           </div>
         </div>
 
+        <dl class="metric-grid" id="workspace-metrics" aria-label="Metryki materiału" hidden></dl>
+
         <p class="error-banner" id="error-banner" hidden></p>
         <section class="completion-summary" id="completion-summary" hidden></section>
 
@@ -93,16 +119,82 @@
           <button type="button" role="tab" aria-selected="true" aria-controls="panel-workflow" id="tab-workflow" class="tab is-active" data-tab="workflow">Proces</button>
           <button type="button" role="tab" aria-selected="false" aria-controls="panel-files" id="tab-files" class="tab" data-tab="files">Pliki</button>
           <button type="button" role="tab" aria-selected="false" aria-controls="panel-activity" id="tab-activity" class="tab" data-tab="activity">Aktywność</button>
+          <button type="button" role="tab" aria-selected="false" aria-controls="panel-settings" id="tab-settings" class="tab" data-tab="settings">Ustawienia</button>
         </div>
 
         <section id="panel-workflow" role="tabpanel" aria-labelledby="tab-workflow" class="tab-panel">
           <ol class="stage-timeline" id="stage-timeline" aria-label="Etapy produkcji"></ol>
         </section>
+
         <section id="panel-files" role="tabpanel" aria-labelledby="tab-files" class="tab-panel" hidden>
+          <div class="files-toolbar">
+            <div class="field field-compact">
+              <label for="file-filter">Filtruj pliki</label>
+              <input type="search" id="file-filter" autocomplete="off" placeholder="Nazwa pliku">
+            </div>
+            <button type="button" class="btn btn-secondary" id="files-refresh">Odśwież</button>
+          </div>
           <div class="file-grid" id="workspace-files"></div>
         </section>
+
         <section id="panel-activity" role="tabpanel" aria-labelledby="tab-activity" class="tab-panel" hidden>
+          <div class="files-toolbar">
+            <div class="field field-compact">
+              <label for="event-level-filter">Poziom zdarzeń</label>
+              <select id="event-level-filter">
+                <option value="all" selected>Wszystkie</option>
+                <option value="info">Informacje</option>
+                <option value="error">Błędy</option>
+              </select>
+            </div>
+          </div>
           <ul class="events-log" id="events-log" aria-label="Log zdarzeń"></ul>
+        </section>
+
+        <section id="panel-settings" role="tabpanel" aria-labelledby="tab-settings" class="tab-panel" hidden>
+          <form id="settings-form" class="settings-form">
+            <p class="field-help" id="settings-help">Ustawienia można zmieniać, gdy projekt nie jest uruchomiony. Zmiany wpływają na kolejne etapy.</p>
+            <div class="field">
+              <label for="settings-title">Tytuł</label>
+              <input type="text" id="settings-title" name="title" required>
+            </div>
+            <div class="field">
+              <label for="settings-topic">Temat</label>
+              <input type="text" id="settings-topic" name="topic" required>
+            </div>
+            <div class="field">
+              <label for="settings-mode">Tryb</label>
+              <select id="settings-mode" name="mode">
+                <option value="lead-magnet">Lead magnet (15-30 stron)</option>
+                <option value="guide">Poradnik ekspercki (40-100 stron)</option>
+                <option value="premium">Książka premium (150-300 stron)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="settings-audience">Odbiorca</label>
+              <input type="text" id="settings-audience" name="audience">
+            </div>
+            <div class="field">
+              <label for="settings-brand">Marka</label>
+              <input type="text" id="settings-brand" name="brand">
+            </div>
+            <div class="field">
+              <label for="settings-tone">Ton</label>
+              <input type="text" id="settings-tone" name="tone">
+            </div>
+            <div class="field">
+              <label for="settings-language">Język</label>
+              <input type="text" id="settings-language" name="language">
+            </div>
+            <div class="field">
+              <label for="settings-chapters">Struktura rozdziałów (jeden tytuł w wierszu)</label>
+              <textarea id="settings-chapters" name="chapter_titles" rows="6" placeholder="Zostaw puste, aby użyć struktury z presetu trybu"></textarea>
+            </div>
+            <p class="form-error" id="settings-error" hidden></p>
+            <div class="dialog-actions">
+              <button type="submit" class="btn btn-primary" id="settings-save">Zapisz ustawienia</button>
+            </div>
+          </form>
         </section>
       </section>
     </main>
@@ -122,6 +214,10 @@
         <section>
           <h2>Źródła</h2>
           <ul id="inspector-sources" class="inspector-list"></ul>
+          <div class="field field-compact">
+            <label for="inspector-source-files">Dodaj pliki źródłowe</label>
+            <input type="file" id="inspector-source-files" accept=".txt,.md,.pdf" multiple>
+          </div>
         </section>
         <section>
           <h2>Ostatnia aktywność</h2>
@@ -158,6 +254,30 @@
       <label class="sr-only" for="command-palette-input">Komenda</label>
       <input type="search" id="command-palette-input" aria-controls="command-palette-list" aria-activedescendant="palette-command-start" autocomplete="off" placeholder="Wpisz komendę">
       <ul id="command-palette-list" class="palette-list" role="listbox" aria-label="Komendy"></ul>
+      <p class="palette-hint">Enter uruchamia · ↑↓ nawigacja · Esc zamyka</p>
+    </div>
+  </dialog>
+
+  <dialog id="artifact-preview" class="dialog preview-dialog" aria-labelledby="artifact-preview-title">
+    <div class="preview-header">
+      <div>
+        <h2 id="artifact-preview-title">Podgląd pliku</h2>
+        <p class="meta" id="artifact-preview-meta"></p>
+      </div>
+      <div class="preview-actions">
+        <a class="btn btn-secondary" id="artifact-download-link" href="#" download>Pobierz</a>
+        <button type="button" class="btn btn-tertiary" id="artifact-preview-close">Zamknij</button>
+      </div>
+    </div>
+    <div class="preview-body" id="artifact-preview-body"></div>
+  </dialog>
+
+  <dialog id="confirm-dialog" class="dialog confirm-dialog" aria-labelledby="confirm-dialog-title">
+    <h2 id="confirm-dialog-title">Potwierdź akcję</h2>
+    <p id="confirm-dialog-message"></p>
+    <div class="dialog-actions">
+      <button type="button" class="btn btn-secondary" id="confirm-dialog-cancel">Anuluj</button>
+      <button type="button" class="btn btn-danger" id="confirm-dialog-accept">Potwierdź</button>
     </div>
   </dialog>
 
@@ -167,6 +287,9 @@
         <p class="eyebrow">Nowy projekt</p>
         <h2 id="new-project-title">Zbuduj pakiet ebooka</h2>
         <p id="wizard-status" aria-live="polite">Krok 1 z 3: Cel i format</p>
+        <ol class="wizard-progress" id="wizard-progress" aria-hidden="true">
+          <li class="is-active"></li><li></li><li></li><li></li>
+        </ol>
       </div>
 
       <section class="wizard-step" id="wizard-step-goal" data-step="0">
@@ -190,6 +313,7 @@
             <option value="guide" selected>Poradnik ekspercki (40-100 stron)</option>
             <option value="premium">Książka premium (150-300 stron)</option>
           </select>
+          <p class="field-help" id="mode-summary">Poradnik ekspercki: 8 rozdziałów, 40-100 stron.</p>
         </div>
       </section>
 
@@ -223,6 +347,11 @@
           <p class="field-help" id="provider-guidance">Codex CLI i Claude Code są narzędziami lokalnymi użytkownika. Ebook Factory nie przechowuje danych logowania.</p>
         </div>
         <div class="field">
+          <label for="field-chapter-titles">Własna struktura rozdziałów (opcjonalnie, jeden tytuł w wierszu)</label>
+          <textarea id="field-chapter-titles" name="chapter_titles" rows="5" placeholder="Zostaw puste, aby użyć struktury presetu"></textarea>
+          <p class="field-help" id="chapter-titles-help">Podane tytuły zastępują preset trybu i decydują o liczbie rozdziałów.</p>
+        </div>
+        <div class="field">
           <label for="field-source-materials">Materiały źródłowe (opcjonalnie, max 50000 znaków)</label>
           <textarea id="field-source-materials" name="source_materials" maxlength="50000" rows="6" placeholder="Wklej notatki, fakty lub źródła do wykorzystania w strategii i researchu"></textarea>
         </div>
@@ -235,6 +364,10 @@
       <section class="wizard-step review-step" id="wizard-step-review" data-step="3" hidden>
         <h3>Sprawdź przed wysłaniem</h3>
         <dl id="wizard-review" class="review-list"></dl>
+        <label class="checkbox-field" for="field-autostart">
+          <input type="checkbox" id="field-autostart" checked>
+          <span>Uruchom produkcję od razu po utworzeniu</span>
+        </label>
       </section>
 
       <p class="form-error" id="form-error" hidden></p>

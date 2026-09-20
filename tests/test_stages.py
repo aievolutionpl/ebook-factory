@@ -213,3 +213,148 @@ def test_qa_stage_passes_pdf_check_for_pdf_with_pages_and_text(tmp_path):
     pdf_lines = [line for line in report.splitlines() if "PDF" in line]
     assert pdf_lines, report
     assert all("[PASS]" in line for line in pdf_lines), report
+
+
+# --------------------------------------------------------------- v2 stages
+
+
+def test_custom_chapter_titles_replace_the_mode_preset(repo, projects_root):
+    from ebook_factory.models import ProjectCreate
+    from ebook_factory.pipeline import PipelineRunner
+    from ebook_factory.stages import DEFAULT_STAGE_HANDLERS, resolve_chapter_titles
+
+    project = repo.create_project(
+        ProjectCreate(
+            title="Wlasna struktura",
+            topic="temat",
+            mode="premium",
+            chapter_titles=["Alfa", "Beta"],
+        )
+    )
+    titles, source = resolve_chapter_titles(project)
+    assert titles == ["Alfa", "Beta"]
+    assert source == "custom"
+
+    runner = PipelineRunner(repo, projects_root, stage_handlers=DEFAULT_STAGE_HANDLERS)
+    result = runner.run(project.id)
+    assert result.status == "completed"
+
+    outline = json.loads(
+        (projects_root / project.slug / "outline" / "outline.json").read_text(encoding="utf-8")
+    )
+    assert [c["title"] for c in outline["chapters"]] == ["Alfa", "Beta"]
+    assert outline["structure_source"] == "custom"
+    assert len(list((projects_root / project.slug / "chapters").glob("chapter-*.md"))) == 2
+
+
+def test_preset_structure_repeats_templates_for_long_modes():
+    from ebook_factory.models import Project
+    from ebook_factory.stages import CHAPTER_TEMPLATES, resolve_chapter_titles
+
+    project = Project(
+        id="x", slug="x", title="t", topic="t", mode="premium", language="pl",
+        audience="", brand="", tone="", source_materials=None, status="draft",
+        progress=0, created_at="", updated_at="",
+    )
+    titles, source = resolve_chapter_titles(project)
+    assert source == "preset"
+    assert len(titles) == 14
+    assert len(set(titles)) == 14
+    assert titles[0] == CHAPTER_TEMPLATES[0]
+
+
+def test_published_book_carries_title_page_toc_and_colophon(repo, projects_root):
+    from ebook_factory.models import ProjectCreate
+    from ebook_factory.pipeline import PipelineRunner
+    from ebook_factory.stages import DEFAULT_STAGE_HANDLERS
+
+    project = repo.create_project(
+        ProjectCreate(title="Front matter", topic="temat", mode="lead-magnet", brand="Marka")
+    )
+    runner = PipelineRunner(repo, projects_root, stage_handlers=DEFAULT_STAGE_HANDLERS)
+    assert runner.run(project.id).status == "completed"
+
+    with zipfile.ZipFile(projects_root / project.slug / "builds" / "book.epub") as zf:
+        nav = zf.read("OEBPS/nav.xhtml").decode("utf-8")
+        first = zf.read("OEBPS/chapter-01.xhtml").decode("utf-8")
+    assert "Strona tytulowa" in nav
+    assert "Spis tresci" in nav
+    assert "Nota o powstaniu materialu" in nav
+    assert "Marka" in first
+
+
+def test_delivery_package_includes_manuscript_outline_and_readme(repo, projects_root):
+    from ebook_factory.models import ProjectCreate
+    from ebook_factory.pipeline import PipelineRunner
+    from ebook_factory.stages import DEFAULT_STAGE_HANDLERS
+
+    project = repo.create_project(
+        ProjectCreate(title="Pelna paczka", topic="temat", mode="lead-magnet")
+    )
+    runner = PipelineRunner(repo, projects_root, stage_handlers=DEFAULT_STAGE_HANDLERS)
+    assert runner.run(project.id).status == "completed"
+
+    delivery_dir = projects_root / project.slug / "delivery"
+    with zipfile.ZipFile(delivery_dir / "delivery.zip") as zf:
+        names = set(zf.namelist())
+    assert {
+        "book.pdf",
+        "book.epub",
+        "manuscript.md",
+        "outline.json",
+        "strategy.md",
+        "research-notes.md",
+        "fact-check.md",
+        "metrics.json",
+        "cover.svg",
+        "README.md",
+        "manifest.json",
+    } <= names
+
+    manifest = json.loads((delivery_dir / "manifest.json").read_text(encoding="utf-8"))
+    manifest_names = {entry["name"] for entry in manifest["files"]}
+    assert "manuscript.md" in manifest_names
+    assert all(entry["sha256"] for entry in manifest["files"])
+
+    readme = (delivery_dir / "README.md").read_text(encoding="utf-8")
+    assert "Pelna paczka" in readme
+    assert "Przed publikacja" in readme
+
+
+def test_qa_report_records_material_metrics(repo, projects_root):
+    from ebook_factory.models import ProjectCreate
+    from ebook_factory.pipeline import PipelineRunner
+    from ebook_factory.stages import DEFAULT_STAGE_HANDLERS
+
+    project = repo.create_project(
+        ProjectCreate(title="Metryki", topic="temat", mode="lead-magnet")
+    )
+    runner = PipelineRunner(repo, projects_root, stage_handlers=DEFAULT_STAGE_HANDLERS)
+    assert runner.run(project.id).status == "completed"
+
+    qa_dir = projects_root / project.slug / "qa"
+    report = (qa_dir / "qa-report.md").read_text(encoding="utf-8")
+    assert "Metryki materialu" in report
+    metrics = json.loads((qa_dir / "metrics.json").read_text(encoding="utf-8"))
+    assert metrics["chapters"] == 5
+    assert metrics["words"] > 0
+
+
+def test_qa_chapter_check_follows_the_outline_not_the_mode_preset(repo, projects_root):
+    """A three-chapter custom structure must not fail the guide-mode check."""
+    from ebook_factory.models import ProjectCreate
+    from ebook_factory.pipeline import PipelineRunner
+    from ebook_factory.stages import DEFAULT_STAGE_HANDLERS
+
+    project = repo.create_project(
+        ProjectCreate(
+            title="Krotka struktura",
+            topic="temat",
+            mode="guide",
+            chapter_titles=["Jeden", "Dwa", "Trzy"],
+        )
+    )
+    runner = PipelineRunner(repo, projects_root, stage_handlers=DEFAULT_STAGE_HANDLERS)
+    assert runner.run(project.id).status == "completed"
+    report = (projects_root / project.slug / "qa" / "qa-report.md").read_text(encoding="utf-8")
+    assert "[PASS] Liczba rozdzialow >= 3" in report

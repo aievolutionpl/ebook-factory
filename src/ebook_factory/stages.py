@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import re
 import shutil
+from datetime import datetime, timezone
 from html import escape as html_escape
 from pathlib import Path
 
@@ -25,6 +26,7 @@ from .artifacts import (
 from .models import MODE_CONFIG, Project
 from .pdfcheck import check_pdf
 from .pipeline import StageResult
+from .workspace import compute_metrics
 
 CHAPTER_TEMPLATES = [
     "Wprowadzenie do tematu",
@@ -168,17 +170,47 @@ def research_stage(project: Project, project_dir: Path) -> StageResult:
     return StageResult(True, "research notes captured", ["research/notes.md"])
 
 
+def resolve_chapter_titles(project: Project) -> tuple[list[str], str]:
+    """Pick the chapter structure for a project.
+
+    A custom structure supplied by the operator always wins and is used
+    verbatim, including its length. Otherwise the mode preset decides how many
+    template chapters to use, repeating the template list when a mode asks for
+    more chapters than there are templates.
+    """
+    custom = [title for title in (project.chapter_titles or []) if title.strip()]
+    if custom:
+        return custom, "custom"
+    config = MODE_CONFIG[project.mode]
+    titles: list[str] = []
+    for index in range(config.chapter_count):
+        base = CHAPTER_TEMPLATES[index % len(CHAPTER_TEMPLATES)]
+        cycle = index // len(CHAPTER_TEMPLATES)
+        titles.append(base if cycle == 0 else f"{base} ({cycle + 1})")
+    return titles, "preset"
+
+
 def outline_stage(project: Project, project_dir: Path) -> StageResult:
     config = MODE_CONFIG[project.mode]
-    titles = CHAPTER_TEMPLATES[: config.chapter_count]
+    titles, source = resolve_chapter_titles(project)
     chapters = [
         {"title": title, "goal": f"Poprowadzic czytelnika przez etap: {title.lower()}"}
         for title in titles
     ]
-    outline = {"mode": project.mode, "topic": project.topic, "chapters": chapters}
+    outline = {
+        "mode": project.mode,
+        "topic": project.topic,
+        "structure_source": source,
+        "words_per_chapter": config.words_per_chapter,
+        "chapters": chapters,
+    }
     path = project_dir / "outline" / "outline.json"
     path.write_text(json.dumps(outline, ensure_ascii=False, indent=2), encoding="utf-8")
-    return StageResult(True, f"{len(chapters)} chapters planned", ["outline/outline.json"])
+    return StageResult(
+        True,
+        f"{len(chapters)} chapters planned ({source})",
+        ["outline/outline.json"],
+    )
 
 
 def draft_stage(project: Project, project_dir: Path) -> StageResult:
@@ -264,13 +296,57 @@ def design_stage(project: Project, project_dir: Path) -> StageResult:
     return StageResult(True, "cover generated", ["images/cover.svg", "images/cover.png"])
 
 
+def _front_matter_sections(project: Project, chapter_titles: list[str]) -> list[tuple[str, str]]:
+    """Title page, table of contents and colophon, shared by the PDF and EPUB.
+
+    Both builders take the same ``(title, body_html)`` chapter list, so front
+    and back matter are expressed as ordinary sections rather than being
+    duplicated in two engine-specific templates.
+    """
+    config = MODE_CONFIG[project.mode]
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    title_page = "".join(
+        f"<p>{html_escape(line)}</p>"
+        for line in (
+            project.title,
+            project.topic,
+            f"Autor / marka: {project.brand or 'Ebook Factory'}",
+            f"Format: {config.label}",
+            f"Jezyk: {project.language}",
+            f"Data zlozenia: {today}",
+        )
+    )
+    toc = "".join(
+        f"<p>{index}. {html_escape(title)}</p>"
+        for index, title in enumerate(chapter_titles, start=1)
+    ) or "<p>Brak rozdzialow.</p>"
+    colophon = "".join(
+        f"<p>{html_escape(line)}</p>"
+        for line in (
+            "Ten material powstal w pipeline Ebook Factory z udzialem narzedzi AI.",
+            "Tresc wymaga redakcji eksperckiej, weryfikacji zrodel i akceptacji "
+            "prawnej przed publikacja lub sprzedaza.",
+            f"Wygenerowano: {today}. Silnik: Ebook Factory.",
+        )
+    )
+    return [
+        ("Strona tytulowa", title_page),
+        ("Spis tresci", toc),
+        ("Nota o powstaniu materialu", colophon),
+    ]
+
+
 def publish_stage(project: Project, project_dir: Path) -> StageResult:
     chapter_paths = sorted((project_dir / "chapters").glob("chapter-*.md"))
-    chapters = []
+    body_chapters = []
     for chapter_path in chapter_paths:
         title, paragraphs = _parse_chapter_markdown(chapter_path)
         body_html = "\n".join(f"<p>{html_escape(p)}</p>" for p in paragraphs)
-        chapters.append((title, body_html))
+        body_chapters.append((title, body_html))
+
+    front = _front_matter_sections(project, [title for title, _ in body_chapters])
+    title_page, toc, colophon = front
+    chapters = [title_page, toc] + body_chapters + [colophon]
 
     pdf_path, engine = build_pdf(
         project_dir / "builds" / "book.pdf",
@@ -409,9 +485,17 @@ def qa_stage(project: Project, project_dir: Path) -> StageResult:
     checks.append(("Landing ma meta viewport i CTA", landing_ok, ""))
 
     chapter_paths = list((project_dir / "chapters").glob("chapter-*.md"))
-    chapters_ok = len(chapter_paths) >= config.chapter_count
+    outline_path = project_dir / "outline" / "outline.json"
+    planned_chapters = config.chapter_count
+    if outline_path.is_file():
+        try:
+            outline_data = json.loads(outline_path.read_text(encoding="utf-8"))
+            planned_chapters = len(outline_data.get("chapters", [])) or planned_chapters
+        except (OSError, json.JSONDecodeError):
+            pass
+    chapters_ok = len(chapter_paths) >= planned_chapters
     checks.append((
-        f"Liczba rozdzialow >= {config.chapter_count}",
+        f"Liczba rozdzialow >= {planned_chapters}",
         chapters_ok,
         f"znaleziono {len(chapter_paths)}",
     ))
@@ -444,13 +528,29 @@ def qa_stage(project: Project, project_dir: Path) -> StageResult:
             f"UWAGA: plik ksiazki wygenerowany silnikiem awaryjnym **{engine}** (stdlib fallback) — "
             "jakosc podstawowa, NIE nadaje sie bezposrednio do druku."
         )
+
+    metrics = compute_metrics(project_dir)
+    lines.append("")
+    lines.append("## Metryki materialu")
+    lines.append("")
+    lines.append(f"- Rozdzialy: {metrics['chapters']}")
+    lines.append(f"- Slowa: {metrics['words']}")
+    lines.append(f"- Szacowane strony (300 slow/strone): {metrics['estimated_pages']}")
+    lines.append(f"- Szacowany czas czytania: {metrics['reading_minutes']} min")
+    lines.append(f"- Artefakty w workspace: {metrics['artifacts']}")
+
     report_path = project_dir / "qa" / "qa-report.md"
     report_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    metrics_path = project_dir / "qa" / "metrics.json"
+    metrics_path.write_text(
+        json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
 
     message = "all checks passed" if all_passed else "one or more QA checks failed"
-    return StageResult(all_passed, message, ["qa/qa-report.md"])
+    return StageResult(all_passed, message, ["qa/qa-report.md", "qa/metrics.json"])
 
 
+#: Files that must be present for delivery to succeed.
 DELIVERY_FILENAMES = [
     "book.pdf",
     "book.epub",
@@ -461,6 +561,49 @@ DELIVERY_FILENAMES = [
     "ads.md",
     "qa-report.md",
 ]
+
+#: Extra files copied when the stage that produces them ran. They enrich the
+#: package (editable manuscript, structure, research trail) without becoming a
+#: hard requirement for older projects resumed from disk.
+OPTIONAL_DELIVERY_FILES: tuple[tuple[str, str], ...] = (
+    ("manuscript.md", "builds/manuscript.md"),
+    ("outline.json", "outline/outline.json"),
+    ("strategy.md", "outline/strategy.md"),
+    ("research-notes.md", "research/notes.md"),
+    ("fact-check.md", "qa/fact-check.md"),
+    ("metrics.json", "qa/metrics.json"),
+    ("cover.svg", "images/cover.svg"),
+)
+
+_PACKAGE_README_TEMPLATE = """# {title}
+
+Pakiet wyprodukowany przez Ebook Factory ({mode}).
+
+## Co jest w srodku
+
+| Plik | Opis |
+| --- | --- |
+| book.pdf | Zlozona ksiazka w PDF |
+| book.epub | Wersja EPUB 3 do czytnikow |
+| manuscript.md | Pelny manuskrypt w markdownie do dalszej redakcji |
+| outline.json | Struktura rozdzialow uzyta przy pisaniu |
+| strategy.md | Notatka strategiczna projektu |
+| research-notes.md | Slad researchu do weryfikacji |
+| fact-check.md | Lista twierdzen do potwierdzenia zrodlami |
+| cover.png / cover.svg | Okladka w wersji rastrowej i wektorowej |
+| offer.md, landing.html, posts.md, ads.md | Pakiet marketingowy |
+| qa-report.md, metrics.json | Raport kontroli jakosci i metryki materialu |
+| manifest.json | Sumy kontrolne SHA-256 wszystkich plikow |
+
+## Przed publikacja
+
+1. Zweryfikuj kazde twierdzenie z `fact-check.md` przy prawdziwym zrodle.
+2. Przeprowadz redakcje jezykowa manuskryptu.
+3. Sprawdz prawa do wykorzystanych materialow zrodlowych.
+4. Zachowaj informacje o udziale AI w powstaniu materialu.
+
+Wygenerowano: {generated_at}
+"""
 
 
 def delivery_stage(project: Project, project_dir: Path) -> StageResult:
@@ -478,17 +621,32 @@ def delivery_stage(project: Project, project_dir: Path) -> StageResult:
     for name, source in sources.items():
         shutil.copyfile(source, delivery_dir / name)
 
-    manifest = build_manifest({name: delivery_dir / name for name in DELIVERY_FILENAMES})
+    packaged = list(DELIVERY_FILENAMES)
+    for name, relative in OPTIONAL_DELIVERY_FILES:
+        source = project_dir / relative
+        if source.is_file():
+            shutil.copyfile(source, delivery_dir / name)
+            packaged.append(name)
+
+    readme = _PACKAGE_README_TEMPLATE.format(
+        title=project.title,
+        mode=MODE_CONFIG[project.mode].label,
+        generated_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+    )
+    (delivery_dir / "README.md").write_text(readme, encoding="utf-8")
+    packaged.append("README.md")
+
+    manifest = build_manifest({name: delivery_dir / name for name in packaged})
     manifest_path = delivery_dir / "manifest.json"
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    build_delivery_zip(
-        delivery_dir, delivery_dir / "delivery.zip", DELIVERY_FILENAMES + ["manifest.json"]
-    )
+    build_delivery_zip(delivery_dir, delivery_dir / "delivery.zip", packaged + ["manifest.json"])
 
-    artifact_paths = [f"delivery/{name}" for name in DELIVERY_FILENAMES]
+    artifact_paths = [f"delivery/{name}" for name in packaged]
     artifact_paths += ["delivery/manifest.json", "delivery/delivery.zip"]
-    return StageResult(True, "delivery package built", artifact_paths)
+    return StageResult(
+        True, f"delivery package built ({len(packaged)} files)", artifact_paths
+    )
 
 
 DEFAULT_STAGE_HANDLERS = {
