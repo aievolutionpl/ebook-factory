@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 from fastapi.testclient import TestClient
 
+from ebook_factory.models import STAGE_DEFINITIONS
 from ebook_factory.api import ProjectAlreadyRunningError, WorkerRegistry
 from ebook_factory.app import create_app
 from ebook_factory.repository import ProjectRepository
@@ -43,7 +44,7 @@ def test_create_and_fetch_project(client):
     assert body["provider"] == "demo"
     assert body["status"] == "draft"
     assert "stages" in body
-    assert len(body["stages"]) == 11
+    assert len(body["stages"]) == len(STAGE_DEFINITIONS)
     pid = body["id"]
     detail = client.get(f"/api/projects/{pid}")
     assert detail.status_code == 200
@@ -475,3 +476,120 @@ def test_unavailable_provider_fails_before_stage_execution(client, tmp_path, mon
     assert "provider codex-cli is not available" in final["error"]
     stages = client.get(f"/api/projects/{pid}").json()["stages"]
     assert stages[0]["status"] == "pending"
+
+
+# ------------------------------------------------- writing style & humanizer
+
+
+def test_create_accepts_writing_style_and_humanize_level(client):
+    r = client.post(
+        "/api/projects",
+        json={
+            "title": "Styl i humanizacja",
+            "topic": "automatyzacja sprzedaży",
+            "mode": "lead-magnet",
+            "writing_style": "narrative",
+            "humanize_level": "strong",
+        },
+    )
+    assert r.status_code == 201
+    body = r.json()
+    assert body["writing_style"] == "narrative"
+    assert body["humanize_level"] == "strong"
+
+
+def test_create_defaults_to_practical_standard(client):
+    r = client.post(
+        "/api/projects",
+        json={"title": "Domyślne", "topic": "temat", "mode": "lead-magnet"},
+    )
+    body = r.json()
+    assert body["writing_style"] == "practical"
+    assert body["humanize_level"] == "standard"
+
+
+def test_invalid_writing_style_is_rejected(client):
+    r = client.post(
+        "/api/projects",
+        json={
+            "title": "Zły styl",
+            "topic": "temat",
+            "mode": "lead-magnet",
+            "writing_style": "poetycki",
+        },
+    )
+    assert r.status_code == 422
+
+
+def test_patch_updates_the_writing_setup(client):
+    project = client.post(
+        "/api/projects",
+        json={"title": "Do zmiany", "topic": "temat", "mode": "lead-magnet"},
+    ).json()
+
+    r = client.patch(
+        f"/api/projects/{project['id']}",
+        json={"writing_style": "expert", "humanize_level": "off"},
+    )
+
+    assert r.status_code == 200
+    assert r.json()["writing_style"] == "expert"
+    assert r.json()["humanize_level"] == "off"
+
+
+def test_duplicate_carries_the_writing_setup(client):
+    project = client.post(
+        "/api/projects",
+        json={
+            "title": "Do skopiowania",
+            "topic": "temat",
+            "mode": "lead-magnet",
+            "writing_style": "expert",
+            "humanize_level": "light",
+        },
+    ).json()
+
+    clone = client.post(f"/api/projects/{project['id']}/duplicate").json()
+
+    assert clone["writing_style"] == "expert"
+    assert clone["humanize_level"] == "light"
+
+
+def test_version_advertises_the_new_knobs(client):
+    body = client.get("/api/version").json()
+    assert body["writing_styles"] == ["practical", "narrative", "expert"]
+    assert body["humanize_levels"] == ["off", "light", "standard", "strong"]
+
+
+def test_readability_endpoint_is_empty_before_a_run(client):
+    project = client.post(
+        "/api/projects",
+        json={"title": "Bez treści", "topic": "temat", "mode": "lead-magnet"},
+    ).json()
+
+    body = client.get(f"/api/projects/{project['id']}/readability").json()
+
+    assert body["source"] == "empty"
+    assert body["after"] is None
+    assert body["level_label"]
+    assert body["style_label"]
+
+
+def test_readability_endpoint_reports_the_finished_book(client):
+    project = client.post(
+        "/api/projects",
+        json={"title": "Do oceny", "topic": "automatyzacja sprzedaży", "mode": "lead-magnet"},
+    ).json()
+    client.post(f"/api/projects/{project['id']}/start")
+    wait_for_status(client, project["id"], {"completed", "failed"}, timeout=120)
+
+    body = client.get(f"/api/projects/{project['id']}/readability").json()
+
+    assert body["source"] == "humanize-stage"
+    assert body["after"]["ai_score"] <= body["target"]
+    assert body["chapters"]
+    assert "findings" in body["after"]
+
+
+def test_readability_endpoint_404s_for_an_unknown_project(client):
+    assert client.get("/api/projects/nope/readability").status_code == 404

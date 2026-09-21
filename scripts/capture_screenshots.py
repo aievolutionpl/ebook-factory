@@ -48,6 +48,8 @@ DEMO_PROJECT = {
     "brand": "Ebook Factory Demo",
     "tone": "rzeczowy",
     "provider": "demo",
+    "writing_style": "practical",
+    "humanize_level": "standard",
 }
 
 
@@ -135,6 +137,16 @@ def capture(base: str, output: Path) -> list[Path]:
         page.click("#tab-files")
         page.wait_for_timeout(900)
         written.append(_shot(page, output / "desktop-files.png"))
+
+        page.click("#tab-quality")
+        page.wait_for_timeout(900)
+        # The panel sits below the metrics, so scroll it into frame before the
+        # shot; otherwise the screenshot only shows the header again.
+        page.eval_on_selector(
+            "#panel-quality", "node => node.scrollIntoView({block: 'start'})"
+        )
+        page.wait_for_timeout(400)
+        written.append(_shot(page, output / "desktop-quality.png"))
 
         page.click("#tab-workflow")
         page.click("#theme-toggle")

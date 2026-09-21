@@ -112,3 +112,38 @@ def test_delivery_zip_contains_required_filenames(tmp_path):
     with zipfile.ZipFile(output_zip) as zf:
         names = set(zf.namelist())
     assert set(required).issubset(names)
+
+
+def test_pdf_fallback_folds_polish_letters_instead_of_dropping_them(tmp_path):
+    """Base-14 Helvetica cannot encode ą/ę/ł, and '?' is worse than 'a'."""
+    output, engine = build_pdf(
+        tmp_path / "book.pdf",
+        title="Zażółć gęślą jaźń",
+        chapters=[("Rozdział pierwszy", "<p>Zażółć gęślą jaźń w treści rozdziału.</p>")],
+        typst_binary=None,
+    )
+
+    assert engine == "fallback-stdlib"
+    raw = output.read_bytes()
+    assert b"Zazolc gesla jazn" in raw
+    assert b"Rozdzial pierwszy" in raw
+    assert b"?????" not in raw
+
+
+def test_epub_keeps_polish_letters_intact(tmp_path):
+    import zipfile
+
+    output = build_epub(
+        tmp_path / "book.epub",
+        title="Zażółć gęślą jaźń",
+        author="Marka",
+        language="pl",
+        chapters=[("Rozdział", "<p>Zażółć gęślą jaźń.</p>")],
+    )
+
+    with zipfile.ZipFile(output) as archive:
+        pages = [name for name in archive.namelist() if name.endswith(".xhtml")]
+        body = "".join(
+            archive.read(name).decode("utf-8") for name in pages
+        )
+    assert "Zażółć gęślą jaźń" in body

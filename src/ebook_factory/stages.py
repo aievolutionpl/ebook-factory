@@ -23,41 +23,50 @@ from .artifacts import (
     build_manifest,
     build_pdf,
 )
+from .humanize import (
+    CHANGE_LABELS,
+    DEFAULT_HUMANIZE_LEVEL,
+    HUMANIZE_LEVEL_LABELS,
+    HUMAN_SCORE_TARGET,
+    analyze,
+    humanize_text,
+)
 from .models import MODE_CONFIG, Project
 from .pdfcheck import check_pdf
 from .pipeline import StageResult
+from .prose import ChapterBrief, ProseComposer, compose_preface
 from .workspace import compute_metrics
 
 CHAPTER_TEMPLATES = [
     "Wprowadzenie do tematu",
     "Dlaczego to ma znaczenie",
     "Pierwsze kroki",
-    "Najczestsze bledy",
-    "Narzedzia i zasoby",
+    "Najczęstsze błędy",
+    "Narzędzia i zasoby",
     "Studium przypadku",
     "Zaawansowane techniki",
-    "Mierzenie efektow",
-    "Skalowanie dzialan",
-    "Utrzymanie wynikow",
+    "Mierzenie efektów",
+    "Skalowanie działań",
+    "Utrzymanie wyników",
     "Checklisty i szablony",
-    "Plan wdrozenia",
+    "Plan wdrożenia",
     "Pytania i odpowiedzi",
-    "Podsumowanie i nastepne kroki",
+    "Podsumowanie i następne kroki",
 ]
 
-_SENTENCE_TEMPLATES = [
-    "W tym rozdziale pokazujemy, jak {topic} wplywa na codzienna prace {audience}.",
-    "Celem jest przedstawienie prostego planu dzialania mozliwego do wdrozenia bez specjalistycznej wiedzy.",
-    "Ton tego materialu jest {tone}, dzieki czemu latwiej przelozyc teorie na konkretne kroki.",
-    "Marka {brand} przygotowala ten material jako demonstracje pelnego procesu produkcji ebooka.",
-    "Kazdy krok opisany ponizej mozna dostosowac do wlasnej sytuacji i dostepnych zasobow.",
-    "Warto zaczac od malych eksperymentow, zanim podejmie sie decyzje o pelnym wdrozeniu.",
-    "Ponizsze wskazowki maja charakter demonstracyjny i pokazuja strukture, a nie gotowa tresc ekspercka.",
-    "Zwroc uwage na to, jak poszczegolne elementy lacza sie w spojna calosc.",
-    "Kolejny akapit rozwija te mysl i pokazuje przykladowe zastosowanie w praktyce.",
-    "Notatki z researchu oraz zrodla demonstracyjne znajduja sie w osobnym pliku paczki.",
-    "Regularne przegladanie postepow pomaga utrzymac tempo pracy nad tematem {topic}.",
-    "Podsumowujac ten fragment, kluczowe jest konsekwentne stosowanie prostych zasad.",
+#: What the reader walks away with. Rotated per chapter so the outline reads
+#: like a plan rather than a list of restated titles.
+CHAPTER_OUTCOMES = [
+    "wiesz, od czego zacząć i co odłożyć na później",
+    "masz listę pytań, które trzeba zadać zespołowi",
+    "potrafisz opisać ten etap jednym zdaniem",
+    "wiesz, jak sprawdzić, czy to naprawdę działa",
+    "masz plan na najbliższy tydzień",
+    "znasz trzy błędy, które kosztują najwięcej czasu",
+    "wiesz, które narzędzia są potrzebne, a bez których się obejdzie",
+    "umiesz ocenić, czy etap można zamknąć",
+    "masz gotowy szablon do wypełnienia",
+    "wiesz, komu przypisać odpowiedzialność",
 ]
 
 _TODO_MARKERS = ("TODO", "LOREM IPSUM", "FIXME")
@@ -69,41 +78,6 @@ def _find_typst_binary() -> str | None:
         return str(candidate)
     found = shutil.which("typst")
     return found
-
-
-def _generate_chapter_paragraphs(
-    topic: str, audience: str, tone: str, brand: str, chapter_title: str, target_words: int
-) -> list[str]:
-    sentences = [
-        template.format(
-            topic=topic,
-            audience=audience or "czytelnikow",
-            tone=tone or "rzeczowy",
-            brand=brand or "Ebook Factory",
-        )
-        for template in _SENTENCE_TEMPLATES
-    ]
-    offset = sum(ord(c) for c in chapter_title) % len(sentences)
-    words_count = 0
-    paragraphs: list[str] = []
-    current: list[str] = []
-    i = 0
-    while words_count < target_words:
-        sentence = sentences[(offset + i) % len(sentences)]
-        current.append(sentence)
-        words_count += len(sentence.split())
-        i += 1
-        if len(current) >= 4:
-            paragraphs.append(" ".join(current))
-            current = []
-    if current:
-        paragraphs.append(" ".join(current))
-    return paragraphs
-
-
-def _chapter_markdown(title: str, paragraphs: list[str]) -> str:
-    body = "\n\n".join(paragraphs)
-    return f"# {title}\n\n{body}\n"
 
 
 def _parse_chapter_markdown(path: Path) -> tuple[str, list[str]]:
@@ -121,21 +95,21 @@ def strategy_stage(project: Project, project_dir: Path) -> StageResult:
         f"# Strategia — {project.title}\n\n"
         f"**Temat:** {project.topic}\n"
         f"**Tryb:** {config.label} ({config.page_range[0]}-{config.page_range[1]} stron)\n"
-        f"**Jezyk:** {project.language}\n"
-        f"**Odbiorca:** {project.audience or 'nieokreslony — do uzupelnienia przed sprzedaza'}\n"
+        f"**Język:** {project.language}\n"
+        f"**Odbiorca:** {project.audience or 'nieokreślony — do uzupełnienia przed sprzedażą'}\n"
         f"**Marka:** {project.brand or 'Ebook Factory Demo'}\n"
         f"**Ton:** {project.tone or 'rzeczowy'}\n\n"
         "## Obietnica\n"
-        f"Ten ebook pokazuje odbiorcy konkretna sciezke do wykorzystania tematu "
+        f"Ten ebook pokazuje odbiorcy konkretną ścieżkę do wykorzystania tematu "
         f"„{project.topic}” w praktyce.\n\n"
         "## Pozycjonowanie\n"
-        "Material demonstracyjny wygenerowany przez pipeline Ebook Factory — "
-        "struktura i proces sa realne, tresc wymaga redakcji eksperckiej przed sprzedaza.\n"
+        "Materiał demonstracyjny wygenerowany przez pipeline Ebook Factory — "
+        "struktura i proces są realne, treść wymaga redakcji eksperckiej przed sprzedażą.\n"
     )
     if project.source_materials:
         content += (
-            "\n## Materialy zrodlowe\n"
-            "Strategia uwzglednia ponizsze materialy dostarczone przez uzytkownika:\n\n"
+            "\n## Materiały źródłowe\n"
+            "Strategia uwzględnia poniższe materiały dostarczone przez użytkownika:\n\n"
             f"{project.source_materials}\n"
         )
     path = project_dir / "outline" / "strategy.md"
@@ -147,21 +121,21 @@ def research_stage(project: Project, project_dir: Path) -> StageResult:
     lines = [
         "# Notatki z researchu (DEMO)",
         "",
-        "> Ten plik zawiera przykladowe, automatycznie wygenerowane placeholdery zrodel. "
-        "W produkcji zastap je prawdziwym researchem i linkami.",
+        "> Ten plik zawiera przykładowe, automatycznie wygenerowane placeholdery źródeł. "
+        "W produkcji zastąp je prawdziwym researchem i linkami.",
         "",
     ]
     for i in range(1, 6):
         lines.append(
-            f"{i}. [DEMO ZRODLO {i}] Materialy o „{project.topic}” — zastap prawdziwym "
-            "linkiem, autorem i data publikacji przed uzyciem komercyjnym."
+            f"{i}. [DEMO ZRODLO {i}] Materiały o „{project.topic}” — zastąp prawdziwym "
+            "linkiem, autorem i datą publikacji przed użyciem komercyjnym."
         )
     if project.source_materials:
         lines.append("")
-        lines.append("## Materialy zrodlowe dostarczone przez uzytkownika")
+        lines.append("## Materiały źródłowe dostarczone przez użytkownika")
         lines.append("")
         lines.append(
-            "Research uwzglednia ponizsze materialy jako punkt wyjscia do dalszej weryfikacji:"
+            "Research uwzględnia poniższe materiały jako punkt wyjścia do dalszej weryfikacji:"
         )
         lines.append("")
         lines.append(project.source_materials)
@@ -194,8 +168,11 @@ def outline_stage(project: Project, project_dir: Path) -> StageResult:
     config = MODE_CONFIG[project.mode]
     titles, source = resolve_chapter_titles(project)
     chapters = [
-        {"title": title, "goal": f"Poprowadzic czytelnika przez etap: {title.lower()}"}
-        for title in titles
+        {
+            "title": title,
+            "goal": "Po tym rozdziale " + CHAPTER_OUTCOMES[index % len(CHAPTER_OUTCOMES)],
+        }
+        for index, title in enumerate(titles)
     ]
     outline = {
         "mode": project.mode,
@@ -214,33 +191,158 @@ def outline_stage(project: Project, project_dir: Path) -> StageResult:
 
 
 def draft_stage(project: Project, project_dir: Path) -> StageResult:
+    """Write every chapter with the prose composer.
+
+    One composer serves the whole book so it can remember which sentences,
+    section shapes and headings it already spent; that is what keeps chapter 9
+    from reading like chapter 2. The seed is derived from the project, so the
+    same project always produces the same manuscript.
+    """
     config = MODE_CONFIG[project.mode]
     outline = json.loads((project_dir / "outline" / "outline.json").read_text(encoding="utf-8"))
+    composer = ProseComposer(f"{project.slug}|{project.topic}|{project.mode}")
     artifact_paths = []
     for index, chapter in enumerate(outline["chapters"], start=1):
-        paragraphs = _generate_chapter_paragraphs(
+        goal = str(chapter.get("goal", "")).removeprefix("Po tym rozdziale ")
+        brief = ChapterBrief(
+            index=index,
+            title=chapter["title"],
+            goal=goal,
             topic=project.topic,
             audience=project.audience,
-            tone=project.tone,
             brand=project.brand,
-            chapter_title=chapter["title"],
+            tone=project.tone,
+            style=project.writing_style,
             target_words=config.words_per_chapter,
         )
-        markdown = _chapter_markdown(chapter["title"], paragraphs)
+        markdown = composer.compose_chapter(brief)
         chapter_path = project_dir / "chapters" / f"chapter-{index:02d}.md"
         chapter_path.write_text(markdown, encoding="utf-8")
         artifact_paths.append(f"chapters/chapter-{index:02d}.md")
     return StageResult(True, f"{len(artifact_paths)} chapters drafted", artifact_paths)
 
 
+def humanize_stage(project: Project, project_dir: Path) -> StageResult:
+    """Strip the machine-writing tells out of every chapter.
+
+    The rewrite is bounded on purpose: it deletes filler, swaps stock phrases,
+    thins transitions and splits runaway sentences. It never invents a fact and
+    never adds a claim, so the result stays as true as the draft it edited.
+    Findings that only a person can fix land in the report instead.
+    """
+    level = project.humanize_level or DEFAULT_HUMANIZE_LEVEL
+    chapter_paths = sorted((project_dir / "chapters").glob("chapter-*.md"))
+    if not chapter_paths:
+        return StageResult(
+            False,
+            "no chapters to humanize — rerun the project from the draft stage",
+        )
+
+    rows: list[dict] = []
+    totals: dict[str, int] = {}
+    before_parts: list[str] = []
+    after_parts: list[str] = []
+    artifact_paths: list[str] = []
+
+    for chapter_path in chapter_paths:
+        original = chapter_path.read_text(encoding="utf-8")
+        outcome = humanize_text(original, level)
+        before_parts.append(original)
+        after_parts.append(outcome.text)
+        if outcome.text != original:
+            chapter_path.write_text(outcome.text, encoding="utf-8")
+            artifact_paths.append(f"chapters/{chapter_path.name}")
+        for key, count in outcome.changes.items():
+            totals[key] = totals.get(key, 0) + count
+        lines = outcome.text.strip().splitlines()
+        title = lines[0].lstrip("# ").strip() if lines and lines[0].startswith("#") else chapter_path.stem
+        rows.append(
+            {
+                "file": f"chapters/{chapter_path.name}",
+                "title": title,
+                "before": outcome.before.ai_score,
+                "after": outcome.after.ai_score,
+                "burstiness": round(outcome.after.burstiness, 3),
+                "changes": sum(outcome.changes.values()),
+            }
+        )
+
+    book_before = analyze("\n\n".join(before_parts))
+    book_after = analyze("\n\n".join(after_parts))
+    summary = {
+        "level": level,
+        "level_label": HUMANIZE_LEVEL_LABELS.get(level, level),
+        "target": HUMAN_SCORE_TARGET,
+        "changes": dict(sorted(totals.items())),
+        "total_changes": sum(totals.values()),
+        "before": book_before.to_dict(),
+        "after": book_after.to_dict(),
+        "chapters": rows,
+    }
+    (project_dir / "qa" / "humanize.json").write_text(
+        json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    (project_dir / "qa" / "humanize-report.md").write_text(
+        _humanize_report(project, summary, book_before, book_after), encoding="utf-8"
+    )
+    artifact_paths += ["qa/humanize.json", "qa/humanize-report.md"]
+    message = (
+        f"humanized at level={level}: ślad AI {book_before.ai_score} → "
+        f"{book_after.ai_score}, {sum(totals.values())} poprawek"
+    )
+    return StageResult(True, message, artifact_paths)
+
+
+def _humanize_report(project: Project, summary: dict, before, after) -> str:
+    lines = [
+        f"# Raport humanizacji — {project.title}",
+        "",
+        f"Poziom humanizacji: **{summary['level_label']}**",
+        "",
+        f"Ślad AI: **{before.ai_score}/100 → {after.ai_score}/100** "
+        f"(cel: {HUMAN_SCORE_TARGET} lub mniej, ocena: {after.grade})",
+        "",
+        "## Rytm i czytelność",
+        "",
+        f"- Średnia długość zdania: {after.avg_sentence_words:.1f} słowa",
+        f"- Zróżnicowanie długości zdań: {after.burstiness:.2f} "
+        "(im wyżej, tym mniej maszynowo — cel: 0.38+)",
+        f"- Zdania dłuższe niż 32 słowa: {after.long_sentence_ratio * 100:.0f}%",
+        f"- Bogactwo słownictwa: {after.lexical_diversity:.2f}",
+        "",
+    ]
+    if summary["changes"]:
+        lines += ["## Co poprawiono automatycznie", ""]
+        for key, count in summary["changes"].items():
+            lines.append(f"- {CHANGE_LABELS.get(key, key)}: {count}")
+        lines.append("")
+    else:
+        lines += ["## Co poprawiono automatycznie", "", "- nic — tekst przeszedł bez poprawek", ""]
+
+    lines += ["## Co zostaje dla redaktora", ""]
+    if after.findings:
+        for finding in after.findings:
+            example = f" Przykład: „{finding.examples[0]}”." if finding.examples else ""
+            lines.append(f"- **{finding.label}** ({finding.count}×) — {finding.hint}{example}")
+    else:
+        lines.append("- brak wykrytych śladów maszynowego pisania")
+    lines += ["", "## Rozdział po rozdziale", "", "| Rozdział | Przed | Po | Poprawki |", "| --- | --- | --- | --- |"]
+    for row in summary["chapters"]:
+        lines.append(f"| {row['title']} | {row['before']} | {row['after']} | {row['changes']} |")
+    lines.append("")
+    return "\n".join(lines)
+
+
 def edit_stage(project: Project, project_dir: Path) -> StageResult:
     chapter_paths = sorted((project_dir / "chapters").glob("chapter-*.md"))
+    chapter_titles: list[str] = []
+    for chapter_path in chapter_paths:
+        head = chapter_path.read_text(encoding="utf-8").lstrip().splitlines()
+        chapter_titles.append(head[0].lstrip("# ").strip() if head else chapter_path.stem)
     manuscript_parts = [
         f"# {project.title}",
         "",
-        "> Manuskrypt demonstracyjny wygenerowany przez pipeline Ebook Factory. "
-        "Tresc pokazuje strukture i proces produkcji; wymaga redakcji eksperckiej "
-        "przed sprzedaza.",
+        compose_preface(project.title, project.topic, project.audience, chapter_titles),
         "",
     ]
     for chapter_path in chapter_paths:
@@ -270,14 +372,14 @@ def fact_check_stage(project: Project, project_dir: Path) -> StageResult:
     lines = ["# Raport fact-check (DEMO)", ""]
     if claims:
         lines.append(
-            "Nastepujace zdania zawieraja liczby i wymagaja weryfikacji zrodlowej "
-            "przed publikacja:"
+            "Następujące zdania zawierają liczby i wymagają weryfikacji źródłowej "
+            "przed publikacją:"
         )
         lines.append("")
         for claim in claims:
-            lines.append(f"- {claim} — zrodlo: DO WERYFIKACJI (demo)")
+            lines.append(f"- {claim} — źródło: DO WERYFIKACJI (demo)")
     else:
-        lines.append("Brak twierdzen liczbowych wymagajacych weryfikacji w tresci demo.")
+        lines.append("Brak twierdzeń liczbowych wymagających weryfikacji w treści demo.")
     path = project_dir / "qa" / "fact-check.md"
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return StageResult(True, f"{len(claims)} claims logged", ["qa/fact-check.md"])
@@ -312,27 +414,27 @@ def _front_matter_sections(project: Project, chapter_titles: list[str]) -> list[
             project.topic,
             f"Autor / marka: {project.brand or 'Ebook Factory'}",
             f"Format: {config.label}",
-            f"Jezyk: {project.language}",
-            f"Data zlozenia: {today}",
+            f"Język: {project.language}",
+            f"Data złożenia: {today}",
         )
     )
     toc = "".join(
         f"<p>{index}. {html_escape(title)}</p>"
         for index, title in enumerate(chapter_titles, start=1)
-    ) or "<p>Brak rozdzialow.</p>"
+    ) or "<p>Brak rozdziałów.</p>"
     colophon = "".join(
         f"<p>{html_escape(line)}</p>"
         for line in (
-            "Ten material powstal w pipeline Ebook Factory z udzialem narzedzi AI.",
-            "Tresc wymaga redakcji eksperckiej, weryfikacji zrodel i akceptacji "
-            "prawnej przed publikacja lub sprzedaza.",
+            "Ten materiał powstał w pipeline Ebook Factory z udziałem narzędzi AI.",
+            "Treść wymaga redakcji eksperckiej, weryfikacji źródeł i akceptacji "
+            "prawnej przed publikacją lub sprzedażą.",
             f"Wygenerowano: {today}. Silnik: Ebook Factory.",
         )
     )
     return [
-        ("Strona tytulowa", title_page),
-        ("Spis tresci", toc),
-        ("Nota o powstaniu materialu", colophon),
+        ("Strona tytułowa", title_page),
+        ("Spis treści", toc),
+        ("Nota o powstaniu materiału", colophon),
     ]
 
 
@@ -383,9 +485,9 @@ def marketing_stage(project: Project, project_dir: Path) -> StageResult:
         f"{config.label} o temacie „{project.topic}” dla {project.audience or 'wybranej grupy odbiorcow'}.\n\n"
         "## Co otrzymujesz\n"
         "- Pelny ebook w formatach PDF i EPUB\n"
-        "- Okladke gotowa do publikacji\n"
-        "- Materialy marketingowe (landing, posty, reklamy)\n\n"
-        "*Material demonstracyjny wygenerowany automatycznie przez Ebook Factory.*\n"
+        "- Okładkę gotową do publikacji\n"
+        "- Materiały marketingowe (landing, posty, reklamy)\n\n"
+        "*Materiał demonstracyjny wygenerowany automatycznie przez Ebook Factory.*\n"
     )
     (project_dir / "marketing" / "offer.md").write_text(offer, encoding="utf-8")
 
@@ -414,7 +516,7 @@ def marketing_stage(project: Project, project_dir: Path) -> StageResult:
   <h1>{html_escape(project.title)}</h1>
   <p>{html_escape(project.topic)} — {html_escape(config.label)} dla {html_escape(project.audience or 'Twojej firmy')}.</p>
   <a class="cta" href="#pobierz">Pobierz teraz</a>
-  <p class="disclosure">Material demonstracyjny wygenerowany przy pomocy AI w ramach pipeline Ebook Factory.</p>
+  <p class="disclosure">Materiał demonstracyjny wygenerowany przy pomocy AI w ramach pipeline Ebook Factory.</p>
 </main>
 </body>
 </html>
@@ -451,16 +553,19 @@ def marketing_stage(project: Project, project_dir: Path) -> StageResult:
 
 def qa_stage(project: Project, project_dir: Path) -> StageResult:
     config = MODE_CONFIG[project.mode]
-    checks: list[tuple[str, bool, str]] = []
+    #: (label, passed, note, blocking). Non-blocking rows are editorial advice:
+    #: they belong in the report, but they must not fail a build on their own.
+    checks: list[tuple[str, bool, str, bool]] = []
 
     pdf_path = project_dir / "builds" / "book.pdf"
     pdf_check = check_pdf(pdf_path)
     pdf_ok = pdf_check.page_count > 0 and pdf_check.has_text
     checks.append((
-        "PDF ma strony i tekst mozliwy do wyekstrahowania",
+        "PDF ma strony i tekst możliwy do wyekstrahowania",
         pdf_ok,
         f"stron={pdf_check.page_count}, tekst={'tak' if pdf_check.has_text else 'nie'}, "
         f"metoda={pdf_check.method}",
+        True,
     ))
 
     epub_path = project_dir / "builds" / "book.epub"
@@ -477,12 +582,12 @@ def qa_stage(project: Project, project_dir: Path) -> StageResult:
                 and any(n.endswith("content.opf") for n in names)
                 and any(n.endswith("nav.xhtml") for n in names)
             )
-    checks.append(("EPUB ma poprawna strukture ZIP", epub_ok, ""))
+    checks.append(("EPUB ma poprawną strukturę ZIP", epub_ok, "", True))
 
     landing_path = project_dir / "marketing" / "landing.html"
     landing_text = landing_path.read_text(encoding="utf-8") if landing_path.exists() else ""
     landing_ok = "viewport" in landing_text and "cta" in landing_text.lower()
-    checks.append(("Landing ma meta viewport i CTA", landing_ok, ""))
+    checks.append(("Landing ma meta viewport i CTA", landing_ok, "", True))
 
     chapter_paths = list((project_dir / "chapters").glob("chapter-*.md"))
     outline_path = project_dir / "outline" / "outline.json"
@@ -495,9 +600,10 @@ def qa_stage(project: Project, project_dir: Path) -> StageResult:
             pass
     chapters_ok = len(chapter_paths) >= planned_chapters
     checks.append((
-        f"Liczba rozdzialow >= {planned_chapters}",
+        f"Liczba rozdziałów >= {planned_chapters}",
         chapters_ok,
         f"znaleziono {len(chapter_paths)}",
+        True,
     ))
 
     no_markers = True
@@ -506,38 +612,78 @@ def qa_stage(project: Project, project_dir: Path) -> StageResult:
         if any(marker in text for marker in _TODO_MARKERS):
             no_markers = False
             break
-    checks.append(("Brak oznaczen roboczych (TODO/LOREM)", no_markers, ""))
+    checks.append(("Brak oznaczeń roboczych (TODO/LOREM)", no_markers, "", True))
+
+    # Readability is graded, not gated: a low score is a note for the editor,
+    # never a reason to throw away a finished build.
+    humanize_path = project_dir / "qa" / "humanize.json"
+    readability: dict = {}
+    if humanize_path.is_file():
+        try:
+            readability = json.loads(humanize_path.read_text(encoding="utf-8")).get("after", {})
+        except (OSError, json.JSONDecodeError):
+            readability = {}
+    if not readability and chapter_paths:
+        readability = analyze(
+            "\n\n".join(path.read_text(encoding="utf-8") for path in chapter_paths)
+        ).to_dict()
+    if readability:
+        ai_score = readability.get("ai_score", 100)
+        checks.append((
+            f"Ślad AI w tekście <= {HUMAN_SCORE_TARGET}",
+            ai_score <= HUMAN_SCORE_TARGET,
+            f"wynik {ai_score}/100 ({readability.get('grade', '?')})",
+            False,
+        ))
+        burstiness = readability.get("burstiness", 0.0)
+        checks.append((
+            "Rytm zdań zróżnicowany (0.38+)",
+            burstiness >= 0.38,
+            f"zróżnicowanie {burstiness:.2f}, średnie zdanie "
+            f"{readability.get('avg_sentence_words', 0)} słowa",
+            False,
+        ))
 
     engine_path = project_dir / "qa" / "engine.json"
     engine_info = json.loads(engine_path.read_text(encoding="utf-8")) if engine_path.exists() else {}
     engine = engine_info.get("pdf_engine", "unknown")
     print_grade = engine_info.get("print_grade", False)
 
-    all_passed = all(passed for _, passed, _ in checks)
+    all_passed = all(passed for _label, passed, _note, blocking in checks if blocking)
 
     lines = [f"# Raport QA — {project.title}", ""]
-    for label, passed, note in checks:
-        status = "PASS" if passed else "FAIL"
+    for label, passed, note, blocking in checks:
+        status = "PASS" if passed else ("FAIL" if blocking else "UWAGA")
         suffix = f" ({note})" if note else ""
         lines.append(f"- [{status}] {label}{suffix}")
     lines.append("")
     if print_grade:
-        lines.append(f"Plik ksiazki wygenerowany silnikiem **{engine}** — sklad gotowy do dalszej obrobki poligraficznej.")
+        lines.append(f"Plik książki wygenerowany silnikiem **{engine}** — skład gotowy do dalszej obróbki poligraficznej.")
     else:
         lines.append(
-            f"UWAGA: plik ksiazki wygenerowany silnikiem awaryjnym **{engine}** (stdlib fallback) — "
-            "jakosc podstawowa, NIE nadaje sie bezposrednio do druku."
+            f"UWAGA: plik książki wygenerowany silnikiem awaryjnym **{engine}** (stdlib fallback) — "
+            "jakość podstawowa, NIE nadaje się bezpośrednio do druku."
         )
 
     metrics = compute_metrics(project_dir)
     lines.append("")
-    lines.append("## Metryki materialu")
+    lines.append("## Metryki materiału")
     lines.append("")
-    lines.append(f"- Rozdzialy: {metrics['chapters']}")
-    lines.append(f"- Slowa: {metrics['words']}")
-    lines.append(f"- Szacowane strony (300 slow/strone): {metrics['estimated_pages']}")
+    lines.append(f"- Rozdziały: {metrics['chapters']}")
+    lines.append(f"- Słowa: {metrics['words']}")
+    lines.append(f"- Szacowane strony (300 słów/stronę): {metrics['estimated_pages']}")
     lines.append(f"- Szacowany czas czytania: {metrics['reading_minutes']} min")
     lines.append(f"- Artefakty w workspace: {metrics['artifacts']}")
+    if readability:
+        lines.append("")
+        lines.append("## Czytelność i ślad AI")
+        lines.append("")
+        lines.append(f"- Ślad AI: {readability.get('ai_score')}/100 ({readability.get('grade')})")
+        lines.append(f"- Średnia długość zdania: {readability.get('avg_sentence_words')} słowa")
+        lines.append(f"- Zróżnicowanie długości zdań: {readability.get('burstiness')}")
+        lines.append(f"- Bogactwo słownictwa: {readability.get('lexical_diversity')}")
+        lines.append("")
+        lines.append("Szczegóły i lista poprawek: `qa/humanize-report.md`.")
 
     report_path = project_dir / "qa" / "qa-report.md"
     report_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -571,6 +717,8 @@ OPTIONAL_DELIVERY_FILES: tuple[tuple[str, str], ...] = (
     ("strategy.md", "outline/strategy.md"),
     ("research-notes.md", "research/notes.md"),
     ("fact-check.md", "qa/fact-check.md"),
+    ("humanize-report.md", "qa/humanize-report.md"),
+    ("humanize.json", "qa/humanize.json"),
     ("metrics.json", "qa/metrics.json"),
     ("cover.svg", "images/cover.svg"),
 )
@@ -579,28 +727,33 @@ _PACKAGE_README_TEMPLATE = """# {title}
 
 Pakiet wyprodukowany przez Ebook Factory ({mode}).
 
-## Co jest w srodku
+## Co jest w środku
 
 | Plik | Opis |
 | --- | --- |
-| book.pdf | Zlozona ksiazka w PDF |
-| book.epub | Wersja EPUB 3 do czytnikow |
-| manuscript.md | Pelny manuskrypt w markdownie do dalszej redakcji |
-| outline.json | Struktura rozdzialow uzyta przy pisaniu |
+| book.pdf | Złożona książka w PDF |
+| book.epub | Wersja EPUB 3 do czytników |
+| manuscript.md | Pełny manuskrypt w markdownie do dalszej redakcji |
+| outline.json | Struktura rozdziałów użyta przy pisaniu |
 | strategy.md | Notatka strategiczna projektu |
-| research-notes.md | Slad researchu do weryfikacji |
-| fact-check.md | Lista twierdzen do potwierdzenia zrodlami |
-| cover.png / cover.svg | Okladka w wersji rastrowej i wektorowej |
+| research-notes.md | Ślad researchu do weryfikacji |
+| fact-check.md | Lista twierdzeń do potwierdzenia źródłami |
+| humanize-report.md | Raport humanizacji: ślad AI, rytm zdań, lista poprawek |
+| humanize.json | Ten sam raport w formie danych |
+| cover.png / cover.svg | Okładka w wersji rastrowej i wektorowej |
 | offer.md, landing.html, posts.md, ads.md | Pakiet marketingowy |
-| qa-report.md, metrics.json | Raport kontroli jakosci i metryki materialu |
-| manifest.json | Sumy kontrolne SHA-256 wszystkich plikow |
+| qa-report.md, metrics.json | Raport kontroli jakości i metryki materiału |
+| manifest.json | Sumy kontrolne SHA-256 wszystkich plików |
 
-## Przed publikacja
+## Przed publikacją
 
-1. Zweryfikuj kazde twierdzenie z `fact-check.md` przy prawdziwym zrodle.
-2. Przeprowadz redakcje jezykowa manuskryptu.
-3. Sprawdz prawa do wykorzystanych materialow zrodlowych.
-4. Zachowaj informacje o udziale AI w powstaniu materialu.
+1. Zweryfikuj każde twierdzenie z `fact-check.md` przy prawdziwym źródle.
+2. Przeprowadź redakcję merytoryczną manuskryptu — humanizator poprawia to,
+   jak tekst brzmi, nigdy to, co mówi.
+3. Przejrzyj `humanize-report.md` i popraw to, co zostało oznaczone jako
+   praca dla redaktora.
+4. Sprawdź prawa do wykorzystanych materiałów źródłowych.
+5. Zachowaj informację o udziale AI w powstaniu materiału.
 
 Wygenerowano: {generated_at}
 """
@@ -666,6 +819,7 @@ DEFAULT_STAGE_HANDLERS = {
     "research": research_stage,
     "outline": outline_stage,
     "draft": draft_stage,
+    "humanize": humanize_stage,
     "edit": edit_stage,
     "fact_check": fact_check_stage,
     "design": design_stage,

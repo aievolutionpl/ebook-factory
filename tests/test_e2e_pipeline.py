@@ -5,6 +5,7 @@ import zipfile
 
 from fastapi.testclient import TestClient
 
+from ebook_factory.models import STAGE_DEFINITIONS
 from ebook_factory.app import create_app
 from scripts.run_server import build_arg_parser
 
@@ -64,7 +65,7 @@ def test_full_lead_magnet_pipeline_via_http_produces_valid_delivery(tmp_path):
         )
         assert create.status_code == 201
         project = create.json()
-        assert len(project["stages"]) == 11
+        assert len(project["stages"]) == len(STAGE_DEFINITIONS)
         assert project["status"] == "draft"
 
         start = client.post(f"/api/projects/{project['id']}/start")

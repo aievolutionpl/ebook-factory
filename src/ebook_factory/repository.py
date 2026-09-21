@@ -33,6 +33,8 @@ CREATE TABLE IF NOT EXISTS projects (
     source_materials TEXT,
     provider TEXT NOT NULL DEFAULT 'demo',
     chapter_titles TEXT NOT NULL DEFAULT '[]',
+    writing_style TEXT NOT NULL DEFAULT 'practical',
+    humanize_level TEXT NOT NULL DEFAULT 'standard',
     status TEXT NOT NULL,
     progress INTEGER NOT NULL,
     created_at TEXT NOT NULL,
@@ -90,6 +92,8 @@ def _row_to_project(row: sqlite3.Row) -> Project:
         source_materials=row["source_materials"],
         provider=row["provider"],
         chapter_titles=_decode_chapter_titles(row["chapter_titles"]),
+        writing_style=row["writing_style"],
+        humanize_level=row["humanize_level"],
         status=row["status"],
         progress=row["progress"],
         created_at=row["created_at"],
@@ -154,6 +158,54 @@ class ProjectRepository:
             self._conn.execute(
                 "ALTER TABLE projects ADD COLUMN chapter_titles TEXT NOT NULL DEFAULT '[]'"
             )
+        if "writing_style" not in columns:
+            self._conn.execute(
+                "ALTER TABLE projects ADD COLUMN writing_style TEXT NOT NULL "
+                "DEFAULT 'practical'"
+            )
+        if "humanize_level" not in columns:
+            self._conn.execute(
+                "ALTER TABLE projects ADD COLUMN humanize_level TEXT NOT NULL "
+                "DEFAULT 'standard'"
+            )
+        self._backfill_stage_rows()
+
+    def _backfill_stage_rows(self) -> None:
+        """Give older projects the stages this build knows about.
+
+        A project created before a stage existed has no row for it, so the
+        pipeline would silently skip that work on a resume. Positions are
+        recomputed from STAGE_DEFINITIONS, which is the single source of truth
+        for stage order.
+        """
+        canonical = {definition.name: index for index, definition in enumerate(STAGE_DEFINITIONS)}
+        rows = self._conn.execute("SELECT id FROM projects").fetchall()
+        for row in rows:
+            project_id = row["id"]
+            existing = {
+                stage_row["name"]: stage_row
+                for stage_row in self._conn.execute(
+                    "SELECT id, name, position FROM stages WHERE project_id = ?",
+                    (project_id,),
+                ).fetchall()
+            }
+            for name, position in canonical.items():
+                stage_row = existing.get(name)
+                if stage_row is None:
+                    self._conn.execute(
+                        """
+                        INSERT INTO stages (
+                            id, project_id, name, position, status, attempts,
+                            started_at, finished_at, message, artifact_paths
+                        ) VALUES (?, ?, ?, ?, 'pending', 0, NULL, NULL, '', '[]')
+                        """,
+                        (uuid.uuid4().hex, project_id, name, position),
+                    )
+                elif stage_row["position"] != position:
+                    self._conn.execute(
+                        "UPDATE stages SET position = ? WHERE id = ?",
+                        (position, stage_row["id"]),
+                    )
 
     def close(self) -> None:
         with self._lock:
@@ -181,9 +233,9 @@ class ProjectRepository:
                 """
                 INSERT INTO projects (
                     id, slug, title, topic, mode, language, audience, brand, tone,
-                    source_materials, provider, chapter_titles, status, progress,
-                    created_at, updated_at, error
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    source_materials, provider, chapter_titles, writing_style,
+                    humanize_level, status, progress, created_at, updated_at, error
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     project_id,
@@ -198,6 +250,8 @@ class ProjectRepository:
                     data.source_materials,
                     data.provider,
                     json.dumps(data.chapter_titles, ensure_ascii=False),
+                    data.writing_style,
+                    data.humanize_level,
                     "draft",
                     0,
                     now,
@@ -268,6 +322,8 @@ class ProjectRepository:
                 "source_materials",
                 "provider",
                 "chapter_titles",
+                "writing_style",
+                "humanize_level",
                 "status",
                 "progress",
                 "error",

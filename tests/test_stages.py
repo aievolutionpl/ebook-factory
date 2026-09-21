@@ -277,9 +277,9 @@ def test_published_book_carries_title_page_toc_and_colophon(repo, projects_root)
     with zipfile.ZipFile(projects_root / project.slug / "builds" / "book.epub") as zf:
         nav = zf.read("OEBPS/nav.xhtml").decode("utf-8")
         first = zf.read("OEBPS/chapter-01.xhtml").decode("utf-8")
-    assert "Strona tytulowa" in nav
-    assert "Spis tresci" in nav
-    assert "Nota o powstaniu materialu" in nav
+    assert "Strona tytułowa" in nav
+    assert "Spis treści" in nav
+    assert "Nota o powstaniu materiału" in nav
     assert "Marka" in first
 
 
@@ -318,7 +318,7 @@ def test_delivery_package_includes_manuscript_outline_and_readme(repo, projects_
 
     readme = (delivery_dir / "README.md").read_text(encoding="utf-8")
     assert "Pelna paczka" in readme
-    assert "Przed publikacja" in readme
+    assert "Przed publikacją" in readme
 
 
 def test_qa_report_records_material_metrics(repo, projects_root):
@@ -334,7 +334,7 @@ def test_qa_report_records_material_metrics(repo, projects_root):
 
     qa_dir = projects_root / project.slug / "qa"
     report = (qa_dir / "qa-report.md").read_text(encoding="utf-8")
-    assert "Metryki materialu" in report
+    assert "Metryki materiału" in report
     metrics = json.loads((qa_dir / "metrics.json").read_text(encoding="utf-8"))
     assert metrics["chapters"] == 5
     assert metrics["words"] > 0
@@ -357,4 +357,4 @@ def test_qa_chapter_check_follows_the_outline_not_the_mode_preset(repo, projects
     runner = PipelineRunner(repo, projects_root, stage_handlers=DEFAULT_STAGE_HANDLERS)
     assert runner.run(project.id).status == "completed"
     report = (projects_root / project.slug / "qa" / "qa-report.md").read_text(encoding="utf-8")
-    assert "[PASS] Liczba rozdzialow >= 3" in report
+    assert "[PASS] Liczba rozdziałów >= 3" in report

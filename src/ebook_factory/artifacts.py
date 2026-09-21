@@ -155,6 +155,26 @@ def _wrap_plain_text(body_html: str, width: int = 92) -> list[str]:
     return lines
 
 
+#: Base-14 Helvetica can only carry latin-1, so Polish letters would come out
+#: of the fallback writer as question marks. Folding them to their ASCII base
+#: keeps the emergency PDF readable; the typst engine renders them properly.
+_PDF_TRANSLITERATION = str.maketrans(
+    {
+        "ą": "a", "ć": "c", "ę": "e", "ł": "l", "ń": "n", "ó": "o",
+        "ś": "s", "ź": "z", "ż": "z",
+        "Ą": "A", "Ć": "C", "Ę": "E", "Ł": "L", "Ń": "N", "Ó": "O",
+        "Ś": "S", "Ź": "Z", "Ż": "Z",
+        "„": '"', "”": '"', "“": '"', "’": "'", "‘": "'",
+        "—": "-", "–": "-", "…": "...", "\u00a0": " ",
+    }
+)
+
+
+def _pdf_safe(text: str) -> str:
+    """Fold text into what the stdlib PDF writer can actually encode."""
+    return text.translate(_PDF_TRANSLITERATION)
+
+
 def _build_pdf_fallback(output_path: Path, title: str, chapters: list[Chapter]) -> Path:
     """Minimal valid multi-page PDF built with the stdlib only (Helvetica base14)."""
     page_width, page_height = 420, 595  # points, ~A5-ish
@@ -162,12 +182,12 @@ def _build_pdf_fallback(output_path: Path, title: str, chapters: list[Chapter]) 
     line_height = 14
     top_margin = page_height - 50
 
-    pages_content: list[list[str]] = [[f"Tytul: {title}", ""]]
+    pages_content: list[list[str]] = [[_pdf_safe(f"Tytul: {title}"), ""]]
     for chap_title, body_html in chapters:
         buffer = pages_content[-1]
-        buffer.append(chap_title)
+        buffer.append(_pdf_safe(chap_title))
         buffer.append("")
-        for line in _wrap_plain_text(body_html):
+        for line in _wrap_plain_text(_pdf_safe(body_html)):
             if len(buffer) >= lines_per_page:
                 pages_content.append([])
                 buffer = pages_content[-1]

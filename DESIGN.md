@@ -52,7 +52,7 @@ CSS values must resolve through tokens in `:root`; component rules should not in
 - **Desktop >=1150px:** three columns: left project rail, center active workspace, right inspector. Bottom command composer is fixed and maps only to existing project actions.
 - **Tablet >=768px and <1150px:** single dominant workspace with the project rail as an explicit drawer and inspector below the workspace flow.
 - **Mobile around 390px:** single workspace flow. Project rail behaves as the project drawer area, inspector becomes a bottom sheet, contextual action is sticky, and horizontal overflow is forbidden.
-- **Center workspace:** header with mode/title/status/contextual action, progress cluster, and tabs for Workflow, Files, Activity.
+- **Center workspace:** header with mode/title/status/contextual action, progress cluster, and tabs for Workflow, Files, Text quality, Activity, Settings.
 - **Right inspector:** outputs, sources, recent activity, and download link when completed.
 - **Provider context:** project header and inspector both show the selected provider and local availability.
 
@@ -60,6 +60,8 @@ CSS values must resolve through tokens in `:root`; component rules should not in
 
 - **Project rail:** search, status filters, `+ New`, loading skeleton, empty and error copy.
 - **New project dialog:** accessible four-screen flow built from a 3-step wizard plus review: Goal & format, Audience/brand, Sources/settings, Review before submit. Existing field IDs and upload behavior are preserved.
+- **Writing setup:** the audience/brand step carries the writing style (`practical` / `narrative` / `expert`) and the humanizer level (`off` / `light` / `standard` / `strong`). Both are editable later in Settings and are echoed in the project header, so the reader of the workspace always knows how the book was written.
+- **Text quality panel:** an AI-trace score (0-100, lower is more human) with a written grade, before/after comparison when the humanize stage ran, readability figures, the detected signals with an actionable hint each, and a per-chapter breakdown. The score is never communicated by colour alone: the dial carries the number, the grade in words and an `aria-label`.
 - **Provider selector:** part of Sources/settings. `demo` remains the default; Codex CLI and Claude Code are opt-in local tools with setup guidance and availability status.
 - **Command palette:** Ctrl/Cmd+K opens; ArrowUp/ArrowDown moves active command; Enter executes; Esc closes; focus returns to the trigger.
 - **Command composer:** visible desktop/tablet command strip. Commands are limited to existing `start`, `pause`, `resume`, `cancel`, and `download`.
