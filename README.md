@@ -27,6 +27,7 @@ zostaw notę o prawach autorskich.
 - [Workflow: od pomysłu do paczki](#workflow-od-pomysłu-do-paczki)
 - [Workspace UI](#workspace-ui)
 - [Pipeline produkcyjny](#pipeline-produkcyjny)
+- [Jak powstaje tekst (anty-AI-slop)](#jak-powstaje-tekst-anty-ai-slop)
 - [Co zawiera gotowa paczka](#co-zawiera-gotowa-paczka)
 - [Tryby projektu](#tryby-projektu)
 - [Własna struktura rozdziałów](#własna-struktura-rozdziałów)
@@ -55,6 +56,10 @@ zostaw notę o prawach autorskich.
 
 ![Przeglądarka plików](docs/screenshots/desktop-files.png)
 
+**Tekst — ślad AI, rytm zdań i lista poprawek rozdział po rozdziale**
+
+![Ocena tekstu](docs/screenshots/desktop-quality.png)
+
 **Motyw jasny i ciemny**
 
 ![Motyw jasny](docs/screenshots/desktop-light.png)
@@ -74,12 +79,14 @@ zostaw notę o prawach autorskich.
 
 | Chcesz… | Ebook Factory robi to tak |
 | --- | --- |
-| Napisać ebooka od zera | 11-etapowy pipeline od strategii po paczkę ZIP |
+| Napisać ebooka od zera | 12-etapowy pipeline od strategii po paczkę ZIP |
 | Narzucić własną strukturę | Podajesz listę rozdziałów, ona zastępuje preset trybu |
 | Wykorzystać swoje materiały | Wklejasz tekst lub wgrywasz `.txt` / `.md` / `.pdf` |
 | Dostać plik do druku i na czytnik | PDF (Typst, gdy dostępny) + EPUB 3 |
 | Mieć okładkę | Generowana proceduralnie w PNG i SVG |
 | Sprzedać produkt | Oferta, landing page, posty, warianty reklam |
+| Tekst, który nie brzmi jak AI | Kompozytor prozy o zmiennym rytmie + osobny etap humanizacji |
+| Wiedzieć, jak bardzo brzmi jak AI | Ślad AI 0-100, wskaźniki czytelności i lista poprawek w zakładce **Tekst** |
 | Zweryfikować jakość | Automatyczne QA + lista twierdzeń do fact-checku |
 | Przerwać i wrócić później | Pauza, wznowienie i ponowienie od miejsca błędu |
 | Edytować treść ręcznie | Wszystko leży jako zwykłe pliki w workspace projektu |
@@ -107,9 +114,9 @@ w raporcie QA.
 
 ## Workflow: od pomysłu do paczki
 
-1. **Kreator (3 kroki + podsumowanie).** Cel i format → odbiorca i marka →
-   źródła i ustawienia → przegląd przed wysłaniem.
-2. **Produkcja.** Pipeline przechodzi przez 11 etapów, zapisując stan po
+1. **Kreator (3 kroki + podsumowanie).** Cel i format → odbiorca, marka, styl
+   pisania i poziom humanizacji → źródła i ustawienia → przegląd przed wysłaniem.
+2. **Produkcja.** Pipeline przechodzi przez 12 etapów, zapisując stan po
    każdym z nich. Pasek postępu, etykieta bieżącego etapu i log zdarzeń
    aktualizują się na żywo.
 3. **Kontrola.** W każdej chwili: **wstrzymaj** (po bieżącym etapie),
@@ -119,7 +126,8 @@ w raporcie QA.
 4. **Przegląd.** Zakładka **Pliki** pokazuje każdy realny plik w workspace,
    pogrupowany według etapu, z podglądem tekstu i obrazów oraz pobieraniem.
 5. **Iteracja.** Zakładka **Ustawienia** pozwala zmienić tytuł, temat, tryb,
-   odbiorcę, ton i strukturę rozdziałów — a potem uruchomić produkcję ponownie.
+   odbiorcę, ton, styl pisania, poziom humanizacji i strukturę rozdziałów —
+   a potem uruchomić produkcję ponownie.
    **Duplikuj projekt** klonuje same ustawienia, bez artefaktów, na kolejny
    wariant.
 6. **Dostawa.** Po ukończeniu: jeden przycisk, jedna paczka ZIP z manifestem
@@ -138,12 +146,12 @@ Działa na desktopie, tablecie i telefonie.
   (ostatnio zmienione / najnowsze / tytuł / postęp).
 - Liczniki portfela: w trakcie, gotowe, błędy.
 - Pasek metryk materiału: rozdziały, słowa, szacowane strony, czas czytania,
-  liczba plików, rozmiar workspace — liczone z plików na dysku, więc pozostają
-  prawdziwe także po wznowieniu i po ręcznej edycji rozdziału.
+  liczba plików, rozmiar workspace i ślad AI — liczone z plików na dysku, więc
+  pozostają prawdziwe także po wznowieniu i po ręcznej edycji rozdziału.
 
 **Praca z projektem**
 
-- **Proces** — oś 11 etapów; każdy rozwijany: czas trwania, liczba prób,
+- **Proces** — oś 12 etapów; każdy rozwijany: czas trwania, liczba prób,
   znaczniki startu i końca, komunikat oraz lista wytworzonych artefaktów
   (klikalna, otwiera podgląd). Nad osią pasek etapów pokazuje stan całego
   przebiegu, a licznik podaje bieżący etap, czas jego trwania i szacowany
@@ -152,6 +160,12 @@ Działa na desktopie, tablecie i telefonie.
   (ścieżka / nazwa / rozmiar / data), podziałem na kategorie, sumą rozmiaru
   w każdej grupie, znacznikiem formatu, kopiowaniem ścieżki, podglądem
   tekstu, obrazów i PDF oraz pobieraniem pojedynczych plików.
+- **Tekst** — ocena tego, jak bardzo materiał brzmi jak napisany przez
+  maszynę: ślad AI w skali 0-100 (0 = tekst ludzki), ocena słowna, porównanie
+  przed i po humanizacji, wskaźniki czytelności (średnia długość zdania,
+  zróżnicowanie rytmu, bogactwo słownictwa, udział zdań-molochów), lista
+  wykrytych śladów z podpowiedzią co z nimi zrobić oraz wynik rozdział po
+  rozdziale. Przycisk **Przelicz** liczy wszystko od nowa z plików na dysku.
 - **Aktywność** — log zdarzeń z wyszukiwarką treści, filtrem poziomu
   (informacje / błędy), pełnym znacznikiem czasu pod kursorem oraz
   kopiowaniem i pobieraniem logu jako pliku tekstowego.
@@ -211,13 +225,14 @@ proces może kontynuować od miejsca przerwania.
 | 2 | `research` | `research/notes.md` — ślad źródeł do weryfikacji |
 | 3 | `outline` | `outline/outline.json` — struktura rozdziałów |
 | 4 | `draft` | `chapters/chapter-NN.md` — pierwsza wersja treści |
-| 5 | `edit` | `builds/manuscript.md` — scalony manuskrypt |
-| 6 | `fact_check` | `qa/fact-check.md` — twierdzenia do potwierdzenia |
-| 7 | `design` | `images/cover.png`, `images/cover.svg` |
-| 8 | `publish` | `builds/book.pdf`, `builds/book.epub`, `qa/engine.json` |
-| 9 | `marketing` | `marketing/offer.md`, `landing.html`, `posts.md`, `ads.md` |
-| 10 | `qa` | `qa/qa-report.md`, `qa/metrics.json` |
-| 11 | `delivery` | `delivery/` + `delivery.zip` + `manifest.json` |
+| 5 | `humanize` | przepisane rozdziały + `qa/humanize-report.md`, `qa/humanize.json` |
+| 6 | `edit` | `builds/manuscript.md` — scalony manuskrypt ze wstępem |
+| 7 | `fact_check` | `qa/fact-check.md` — twierdzenia do potwierdzenia |
+| 8 | `design` | `images/cover.png`, `images/cover.svg` |
+| 9 | `publish` | `builds/book.pdf`, `builds/book.epub`, `qa/engine.json` |
+| 10 | `marketing` | `marketing/offer.md`, `landing.html`, `posts.md`, `ads.md` |
+| 11 | `qa` | `qa/qa-report.md`, `qa/metrics.json` |
+| 12 | `delivery` | `delivery/` + `delivery.zip` + `manifest.json` |
 
 Etap, który się nie powiedzie, jest ponawiany do trzech razy w obrębie jednego
 przebiegu. Dopiero potem projekt przechodzi w stan `failed` — i wtedy pomaga
@@ -229,7 +244,97 @@ rozdziałów z outline'em, brak znaczników roboczych (TODO/LOREM) oraz metryki
 materiału. Raport wyraźnie rozróżnia PDF złożony Typstem od pliku z generatora
 awaryjnego.
 
+Do tego dochodzą dwie kontrole **redakcyjne**: ślad AI w tekście i
+zróżnicowanie rytmu zdań. Są oznaczane jako `UWAGA`, a nie `FAIL` — niska
+ocena czytelności to uwaga dla redaktora, nie powód, żeby wyrzucić gotową
+paczkę.
+
 ---
+
+## Jak powstaje tekst (anty-AI-slop)
+
+Tekst, który brzmi jak wygenerowany, nie sprzedaje się i nie czyta. Dlatego
+pisanie i redakcja są tu rozbite na dwa osobne kroki: **kompozytor prozy**
+(`prose.py`) i **humanizator** (`humanize.py`).
+
+### Kompozytor prozy — rozdział o zmiennym kształcie
+
+Poprzednia wersja generatora krążyła po dwunastu zdaniach do wyczerpania limitu
+słów. Każdy rozdział miał ten sam rytm, ten sam początek i ten sam kształt.
+
+Teraz rozdział jest **komponowany**:
+
+- **otwarcie** losowane z kilku kształtów — scena, mocna teza, pytanie
+  czytelnika, typowy błąd, liczba — nigdy dwa razy to samo pod rząd;
+- **sekcje** mierzone w słowach (~210), a nie liczone — sekcja krótsza od tego
+  zamienia rozdział w listę nagłówków, którą czytelnik przewija;
+- **bloki o różnym kształcie**: proza, kroki numerowane, wypunktowania,
+  przykład z praktyki, cytat na marginesie, para „działa / nie działa”,
+  pytanie z odpowiedzią, lista kontrolna;
+- **rytm zdań** planowany z góry: krótkie uderzenia (3-6 słów) przeplatane
+  długimi, bo równa długość zdań to najmocniejszy statystyczny ślad maszyny;
+- **zamknięcie**: trzy konkretne zadania do odhaczenia i jedno zdanie wniosku.
+
+Kompozytor pamięta, czego już użył — **w obrębie całej książki**, nie tylko
+rozdziału — więc rozdział dziewiąty nie powtarza rozdziału drugiego.
+Wszystko jest deterministyczne: ten sam projekt zawsze daje tę samą książkę,
+więc wznowienie przebiegu nie przepisuje historii.
+
+**Styl pisania** wybierasz w kreatorze i w ustawieniach:
+
+| Styl | Z czego zbudowane są rozdziały |
+| --- | --- |
+| `practical` | instrukcje, kroki, listy kontrolne |
+| `narrative` | historie, sceny, przykłady z praktyki |
+| `expert` | analiza, dowody, kontrargumenty, warunki brzegowe |
+
+### Humanizator — osobny etap produkcji
+
+Etap `humanize` czyta gotowe rozdziały, **wykrywa** ślady maszynowego pisania
+i **przepisuje** to, co da się przepisać bezpiecznie. Nigdy nie dopisuje
+twierdzeń — nie może, bo nie ma czym ich sprawdzić — więc tekst po humanizacji
+jest dokładnie tak samo prawdziwy jak przed nią.
+
+**Co wykrywa** (każdy sygnał ma wagę i składa się na ślad AI w skali 0-100):
+
+| Sygnał | Przykład |
+| --- | --- |
+| zwroty-wytrychy | „w dzisiejszych czasach”, „warto pamiętać, że”, „kompleksowe rozwiązania”, „delve into” |
+| wata na początku zdania | „Oczywiście,”, „Można powiedzieć, że”, „Jak się okazuje,” |
+| stos łączników | co drugi akapit od „Ponadto”, „Co więcej”, „W konsekwencji” |
+| nadmiar myślników | więcej niż 4 na 1000 słów |
+| konstrukcja „nie X, tylko Y” | „nie chodzi o narzędzia, chodzi o nawyki” |
+| wyliczenia po trzy | „dane, procesy i ludzie” w każdym akapicie |
+| asekuracja i wzmacniacze | „raczej”, „zazwyczaj” / „absolutnie”, „niezwykle” |
+| równy rytm zdań | zróżnicowanie długości poniżej 0.38 |
+| akapity równej długości | zróżnicowanie poniżej 0.32 |
+| powtarzane początki zdań | próg skaluje się z długością tekstu |
+| ubogie słownictwo | miara MATTR, niezależna od długości książki |
+| zdania-molochy, wykrzykniki, emoji, nagłówki Wielkimi Literami | |
+
+**Co przepisuje** — zależnie od poziomu:
+
+| Poziom | Co robi |
+| --- | --- |
+| `off` | tylko ocena, tekst zostaje nietknięty |
+| `light` | zwroty-wytrychy, emoji, nadmiar wykrzykników |
+| `standard` | dodatkowo wata, stos łączników, myślniki, zdania-molochy |
+| `strong` | dodatkowo rytm akapitu, powtarzane początki, wzmacniacze, węższy limit długości zdania |
+
+Podmiany są odporne na polską fleksję: przymiotnik jest usuwany w całości albo
+zamieniany na przymiotnik o tej samej końcówce, a zamiany zmieniające rodzaj
+rzeczownika zostały świadomie wycięte, żeby nie rozjechać zgody z przydawką.
+Struktura markdown (nagłówki, listy, cytaty, bloki kodu) przechodzi bez zmian,
+a wypunktowanie zapisane małą literą zostaje małą literą.
+
+Etap zapisuje `qa/humanize-report.md` (dla człowieka) i `qa/humanize.json`
+(dla UI i API): ocena przed i po, wskaźniki czytelności, lista wykonanych
+poprawek i lista rzeczy, które musi ocenić redaktor — rozdział po rozdziale.
+
+**Co zostaje dla człowieka.** Humanizator nie naprawia konstrukcji „nie X,
+tylko Y”, nie zmienia szyku zdania i nie wstawia przykładów z życia. Zgłasza
+je w raporcie z podpowiedzią, co zrobić — bo to jest praca redaktora, a nie
+wyrażenia regularnego.
 
 ## Co zawiera gotowa paczka
 
@@ -242,6 +347,8 @@ delivery.zip
 ├── strategy.md         notatka strategiczna
 ├── research-notes.md   ślad researchu
 ├── fact-check.md       lista twierdzeń do potwierdzenia źródłami
+├── humanize-report.md  ślad AI, rytm zdań i lista wykonanych poprawek
+├── humanize.json       ten sam raport w formie danych
 ├── cover.png           okładka rastrowa
 ├── cover.svg           okładka wektorowa
 ├── offer.md            opis oferty
@@ -409,11 +516,14 @@ pierwszego niedokończonego etapu; ukończone etapy zachowują swoje artefakty.
 | GET | `/api/projects/{id}/artifacts` | Workspace files grouped by category |
 | GET | `/api/projects/{id}/artifacts/preview?path=` | Bounded UTF-8 text preview |
 | GET | `/api/projects/{id}/artifacts/raw?path=` | Serve one artifact |
-| GET | `/api/projects/{id}/metrics` | Words, pages, chapters, reading time |
+| GET | `/api/projects/{id}/metrics` | Words, pages, chapters, reading time, ślad AI |
+| GET | `/api/projects/{id}/readability` | Ślad AI, wskaźniki czytelności i wykryte sygnały |
 | GET | `/api/projects/{id}/download` | Delivery ZIP |
 
 Project modes: `lead-magnet`, `guide`, `premium`.
 Providers: `demo`, `codex-cli`, `claude-code`.
+Style pisania: `practical`, `narrative`, `expert` (domyślnie `practical`).
+Poziomy humanizacji: `off`, `light`, `standard`, `strong` (domyślnie `standard`).
 Statusy: `draft`, `running`, `paused`, `completed`, `failed`, `cancelled`.
 
 ### Przykład
@@ -426,11 +536,14 @@ ID=$(curl -s -X POST $BASE/api/projects -H 'Content-Type: application/json' -d '
   "topic": "Jak wdrożyć AI w codziennej pracy",
   "mode": "guide",
   "audience": "właściciele małych firm",
+  "writing_style": "practical",
+  "humanize_level": "standard",
   "chapter_titles": ["Dlaczego teraz", "Pierwszy proces", "Narzędzia", "Pomiar efektów"]
 }' | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
 
 curl -s -X POST $BASE/api/projects/$ID/start
 curl -s $BASE/api/projects/$ID/metrics
+curl -s $BASE/api/projects/$ID/readability
 curl -s $BASE/api/projects/$ID/artifacts
 curl -sL -o delivery.zip $BASE/api/projects/$ID/download
 ```
@@ -512,8 +625,11 @@ Zgłaszanie podatności: [SECURITY.md](SECURITY.md).
 Ebook Factory to oprogramowanie wspierane przez AI. Wygenerowane materiały
 wymagają redakcji przez człowieka, weryfikacji źródeł, w razie potrzeby
 przeglądu prawnego i akceptacji redakcyjnej przed publikacją lub sprzedażą.
-Provider `demo` tworzy treść demonstracyjną: struktura i proces są prawdziwe,
-treść jest wypełniaczem. Każda paczka niesie tę informację w nocie
+Provider `demo` tworzy treść demonstracyjną: struktura, proces i sposób
+pisania są prawdziwe, ale materiał nie zawiera wiedzy eksperckiej ani
+zweryfikowanych źródeł. Humanizator poprawia to, *jak* tekst brzmi — nigdy to,
+*co* mówi: nie dopisuje twierdzeń i nie zmienia faktów, więc niski ślad AI nie
+oznacza, że treść jest prawdziwa. Każda paczka niesie tę informację w nocie
 w książce i w `README.md` paczki.
 
 ---
@@ -538,7 +654,9 @@ src/ebook_factory/
 ├── models.py       Model domenowy, tryby, definicje etapów
 ├── repository.py   Persystencja SQLite i migracje
 ├── pipeline.py     Wznawialny runner etapów
-├── stages.py       Handlery 11 etapów produkcji
+├── stages.py       Handlery 12 etapów produkcji
+├── prose.py        Kompozytor rozdziałów (struktura, rytm, warianty)
+├── humanize.py     Detektor i korektor śladów AI w tekście
 ├── artifacts.py    EPUB, PDF, okładka, manifest, ZIP
 ├── workspace.py    Odczyt artefaktów, bezpieczne ścieżki, metryki
 ├── providers.py    Rejestr i adaptery providerów

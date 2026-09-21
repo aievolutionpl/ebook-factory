@@ -26,6 +26,7 @@ REQUIRED_DELIVERY_FILES = {
     "posts.md",
     "ads.md",
     "qa-report.md",
+    "humanize-report.md",
     "manifest.json",
 }
 
@@ -75,8 +76,13 @@ def create_project(base_url: str) -> str:
         "tone": "rzeczowy",
     }
     project = _request(base_url, "POST", "/api/projects", payload)
-    if len(project.get("stages", [])) != 11:
-        raise SmokeTestError(f"expected 11 stages, got {len(project.get('stages', []))}")
+    # The server is the source of truth for how many stages a build has, so
+    # adding a stage does not turn this smoke test red on its own.
+    expected_stages = _request(base_url, "GET", "/api/version").get("stages", 0)
+    if len(project.get("stages", [])) != expected_stages:
+        raise SmokeTestError(
+            f"expected {expected_stages} stages, got {len(project.get('stages', []))}"
+        )
     return project["id"]
 
 

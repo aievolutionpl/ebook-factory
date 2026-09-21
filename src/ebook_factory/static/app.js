@@ -18,6 +18,8 @@
     stats: null,
     artifactGroups: [],
     metrics: null,
+    readability: null,
+    readabilityLoaded: false,
     pollTimer: null,
     pollInterval: POLL_INTERVAL_ACTIVE,
     tickTimer: null,
@@ -72,6 +74,21 @@
     stageStrip: document.getElementById('stage-strip'),
     workspaceTiming: document.getElementById('workspace-timing'),
     workspaceMetrics: document.getElementById('workspace-metrics'),
+    qualitySummary: document.getElementById('quality-summary'),
+    qualityRefresh: document.getElementById('quality-refresh'),
+    qualityHero: document.getElementById('quality-hero'),
+    qualityDial: document.getElementById('quality-dial'),
+    qualityScore: document.getElementById('quality-score'),
+    qualityGrade: document.getElementById('quality-grade'),
+    qualityVerdict: document.getElementById('quality-verdict'),
+    qualityDelta: document.getElementById('quality-delta'),
+    qualityTrackFill: document.getElementById('quality-track-fill'),
+    qualityConfig: document.getElementById('quality-config'),
+    qualityMetrics: document.getElementById('quality-metrics'),
+    qualityFindings: document.getElementById('quality-findings'),
+    qualityFindingsHeading: document.getElementById('quality-findings-heading'),
+    qualityChapters: document.getElementById('quality-chapters'),
+    qualityChaptersHeading: document.getElementById('quality-chapters-heading'),
     workspacePrimaryAction: document.getElementById('workspace-primary-action'),
     mobilePrimaryAction: document.getElementById('mobile-primary-action'),
     projectMenuButton: document.getElementById('project-menu-button'),
@@ -108,6 +125,8 @@
     sourceFilesInput: document.getElementById('field-source-files'),
     fieldProvider: document.getElementById('field-provider'),
     fieldChapterTitles: document.getElementById('field-chapter-titles'),
+    fieldWritingStyle: document.getElementById('field-writing-style'),
+    fieldHumanizeLevel: document.getElementById('field-humanize-level'),
     fieldAutostart: document.getElementById('field-autostart'),
     modeSummary: document.getElementById('mode-summary'),
     wizardProgress: document.getElementById('wizard-progress'),
@@ -175,11 +194,25 @@
     'claude-code': 'Claude Code',
   };
 
+  var WRITING_STYLE_LABELS = {
+    practical: 'Praktyczny',
+    narrative: 'Narracyjny',
+    expert: 'Ekspercki',
+  };
+
+  var HUMANIZE_LEVEL_LABELS = {
+    off: 'Humanizacja wyłączona',
+    light: 'Humanizacja lekka',
+    standard: 'Humanizacja standardowa',
+    strong: 'Humanizacja mocna',
+  };
+
   var STAGE_LABELS = {
     strategy: 'Strategia',
     research: 'Research',
     outline: 'Architektura',
     draft: 'Pisanie',
+    humanize: 'Humanizacja',
     edit: 'Redakcja',
     fact_check: 'Weryfikacja faktów',
     design: 'Projekt okładki',
@@ -194,6 +227,7 @@
     research: 'Notatki i ślad źródeł do późniejszej weryfikacji.',
     outline: 'Struktura rozdziałów i cele każdego z nich.',
     draft: 'Pierwsza wersja treści wszystkich rozdziałów.',
+    humanize: 'Usunięcie śladów maszynowego pisania i raport czytelności.',
     edit: 'Scalenie rozdziałów w spójny manuskrypt.',
     fact_check: 'Zebranie twierdzeń liczbowych do potwierdzenia.',
     design: 'Okładka w wersji PNG i SVG.',
@@ -321,10 +355,18 @@
       reason: 'Najpierw wybierz projekt.',
     },
     {
+      id: 'quality',
+      label: 'Pokaż ocenę tekstu',
+      hint: 'Zakładka Tekst',
+      keys: '3',
+      when: function (project) { return Boolean(project); },
+      reason: 'Najpierw wybierz projekt.',
+    },
+    {
       id: 'settings',
       label: 'Edytuj ustawienia',
       hint: 'PATCH /api/projects',
-      keys: '4',
+      keys: '5',
       when: function (project) { return Boolean(project); },
       reason: 'Najpierw wybierz projekt.',
     },
@@ -742,6 +784,125 @@
     }
   }
 
+  async function loadReadability() {
+    if (!state.selectedId) return;
+    try {
+      var response = await apiFetch('/api/projects/' + state.selectedId + '/readability');
+      state.readability = await response.json();
+      state.readabilityLoaded = true;
+    } catch (err) {
+      state.readability = null;
+      state.readabilityLoaded = true;
+    }
+    renderQuality();
+  }
+
+  function scoreTone(score) {
+    if (score === null || score === undefined) return 'unknown';
+    if (score <= 15) return 'good';
+    if (score <= 35) return 'ok';
+    if (score <= 60) return 'warn';
+    return 'bad';
+  }
+
+  function renderQuality() {
+    var payload = state.readability;
+    var after = payload && payload.after;
+    if (!after) {
+      el.qualityHero.hidden = true;
+      el.qualityMetrics.hidden = true;
+      el.qualityFindings.innerHTML = '';
+      el.qualityFindingsHeading.hidden = true;
+      el.qualityChapters.innerHTML = '';
+      el.qualityChaptersHeading.hidden = true;
+      el.qualitySummary.textContent = state.readabilityLoaded
+        ? 'Brak rozdziałów do oceny — uruchom produkcję, aby zobaczyć ślad AI.'
+        : 'Wczytywanie oceny tekstu…';
+      return;
+    }
+
+    var target = payload.target || 35;
+    var score = after.ai_score;
+    var tone = scoreTone(score);
+    el.qualityHero.hidden = false;
+    el.qualityDial.dataset.tone = tone;
+    el.qualityDial.setAttribute('aria-label', 'Ślad AI: ' + score + ' na 100');
+    el.qualityScore.textContent = score;
+    el.qualityGrade.textContent = 'Ocena: ' + (after.grade || '—');
+    el.qualityVerdict.textContent = score <= target
+      ? 'Tekst czyta się jak pisany przez człowieka'
+      : 'Tekst nadal brzmi szablonowo';
+    el.qualityTrackFill.style.width = Math.max(2, Math.min(100, score)) + '%';
+    el.qualityTrackFill.dataset.tone = tone;
+
+    var before = payload.before;
+    if (before && typeof before.ai_score === 'number') {
+      var delta = before.ai_score - score;
+      el.qualityDelta.textContent = 'Przed humanizacją ' + before.ai_score + ' → po ' + score +
+        (delta > 0 ? ' (−' + delta + ' punktów)' : ' (nie było czego poprawiać)') +
+        ' · cel: ' + target + ' lub mniej';
+    } else {
+      el.qualityDelta.textContent = 'Cel: ' + target + ' lub mniej. Ocena liczona na żywo z rozdziałów na dysku.';
+    }
+
+    var configParts = [];
+    if (payload.style_label) configParts.push('Styl: ' + payload.style_label);
+    if (payload.level_label) configParts.push('Humanizacja: ' + payload.level_label.toLowerCase());
+    if (payload.total_changes) configParts.push(payload.total_changes + ' automatycznych poprawek');
+    el.qualityConfig.textContent = configParts.join(' · ');
+
+    el.qualitySummary.textContent = payload.source === 'humanize-stage'
+      ? 'Wynik z etapu humanizacji. Pełny raport: qa/humanize-report.md.'
+      : 'Ocena policzona na żywo z rozdziałów zapisanych w workspace.';
+
+    var cards = [
+      ['Średnie zdanie', after.avg_sentence_words + ' słowa'],
+      ['Rytm zdań', formatScore(after.burstiness) + ' (cel 0.38+)'],
+      ['Słownictwo', formatScore(after.lexical_diversity)],
+      ['Długie zdania', Math.round((after.long_sentence_ratio || 0) * 100) + '%'],
+      ['Zdania', formatNumber(after.sentences)],
+      ['Akapity', formatNumber(after.paragraphs)],
+    ];
+    el.qualityMetrics.hidden = false;
+    el.qualityMetrics.innerHTML = cards.map(function (card) {
+      return '<div class="metric-card"><dt>' + escapeHtml(card[0]) + '</dt><dd>' +
+        escapeHtml(String(card[1])) + '</dd></div>';
+    }).join('');
+
+    var findings = after.findings || [];
+    el.qualityFindingsHeading.hidden = findings.length === 0;
+    el.qualityFindings.innerHTML = findings.length
+      ? findings.map(function (finding) {
+          var amount = finding.measure || (finding.count + '×');
+          var example = (finding.examples && finding.examples.length)
+            ? '<p class="finding-example">' + escapeHtml(finding.examples[0]) + '</p>'
+            : '';
+          return '<li class="finding" data-severity="' + escapeHtml(finding.severity) + '">' +
+            '<div class="finding-head"><span class="finding-label">' + escapeHtml(finding.label) +
+            '</span><span class="finding-amount">' + escapeHtml(amount) + '</span></div>' +
+            '<p class="finding-hint">' + escapeHtml(finding.hint) + '</p>' + example + '</li>';
+        }).join('')
+      : '<li class="finding" data-severity="low"><div class="finding-head">' +
+        '<span class="finding-label">Brak wykrytych śladów maszynowego pisania</span></div></li>';
+
+    var chapters = payload.chapters || [];
+    el.qualityChaptersHeading.hidden = chapters.length === 0;
+    el.qualityChapters.innerHTML = chapters.map(function (row) {
+      var rowTone = scoreTone(row.after);
+      return '<div class="chapter-score" data-tone="' + rowTone + '">' +
+        '<span class="chapter-score-title">' + escapeHtml(row.title) + '</span>' +
+        '<span class="chapter-score-value">' + escapeHtml(String(row.before)) + ' → ' +
+        escapeHtml(String(row.after)) + '</span>' +
+        '<span class="chapter-score-meta">' + escapeHtml(String(row.changes)) + ' popr.</span>' +
+        '</div>';
+    }).join('');
+  }
+
+  function formatScore(value) {
+    if (value === null || value === undefined) return '—';
+    return Number(value).toFixed(2);
+  }
+
   function providerInfo(name) {
     return state.providers.find(function (provider) { return provider.name === name; }) || {
       name: name || 'demo',
@@ -764,11 +925,18 @@
       : 'demo';
   }
 
+  function writingSetupLabel(project) {
+    if (!project) return '';
+    var style = WRITING_STYLE_LABELS[project.writing_style] || project.writing_style;
+    var level = HUMANIZE_LEVEL_LABELS[project.humanize_level] || project.humanize_level;
+    return 'Styl: ' + style + ' · ' + level;
+  }
+
   function renderProviderStatus(project) {
     var info = providerInfo(project.provider || 'demo');
     var availability = info.available ? 'dostępny' : 'niedostępny lokalnie';
     var text = 'Agent: ' + (PROVIDER_LABELS[info.name] || info.label) + ' · ' + availability;
-    el.detailProvider.textContent = text;
+    el.detailProvider.textContent = text + ' · ' + writingSetupLabel(project);
     el.inspectorProviderStatus.textContent = text;
     el.inspectorProviderStatus.dataset.available = info.available ? 'true' : 'false';
   }
@@ -853,6 +1021,8 @@
     state.events = [];
     state.artifactGroups = [];
     state.metrics = null;
+    state.readability = null;
+    state.readabilityLoaded = false;
     state.expandedStages = {};
     state.settingsDirty = false;
     state.settingsSnapshot = null;
@@ -861,7 +1031,7 @@
     el.projectDetail.hidden = false;
     renderProjectList();
     await refreshDetail();
-    await Promise.all([loadArtifacts(), loadMetrics()]);
+    await Promise.all([loadArtifacts(), loadMetrics(), loadReadability()]);
     closeProjectDrawer();
     startPolling();
   }
@@ -890,7 +1060,9 @@
 
   async function refreshAll() {
     await refreshDetail();
-    await Promise.all([loadProjects(), loadStats(), loadArtifacts(), loadMetrics()]);
+    await Promise.all([
+      loadProjects(), loadStats(), loadArtifacts(), loadMetrics(), loadReadability(),
+    ]);
     showToast('Dane projektu odświeżone.');
   }
 
@@ -1041,6 +1213,9 @@
       ['Pliki', formatNumber(metrics.artifacts)],
       ['Rozmiar', formatBytes(metrics.total_bytes)],
     ];
+    if (typeof metrics.ai_score === 'number') {
+      cards.splice(4, 0, ['Ślad AI', metrics.ai_score + '/100']);
+    }
     el.workspaceMetrics.hidden = false;
     el.workspaceMetrics.innerHTML = cards.map(function (card) {
       return '<div class="metric-card"><dt>' + escapeHtml(card[0]) + '</dt><dd>' +
@@ -1059,6 +1234,10 @@
       ? metrics.chapters + ' rozdziałów · ' + formatNumber(metrics.words) + ' słów · ok. ' +
         metrics.estimated_pages + ' stron'
       : 'Pakiet ZIP zawiera PDF, EPUB, okładkę, materiały marketingowe i raport jakości.';
+    if (metrics && typeof metrics.ai_score === 'number') {
+      summary += ' · ślad AI ' + metrics.ai_score + '/100' +
+        (metrics.readability_grade ? ' (' + metrics.readability_grade + ')' : '');
+    }
     el.completionSummary.hidden = false;
     el.completionSummary.innerHTML =
       '<h2>Projekt gotowy do pobrania</h2>' +
@@ -1375,6 +1554,7 @@
       panel.hidden = panel.id !== 'panel-' + tabName;
     });
     if (tabName === 'files') loadArtifacts();
+    if (tabName === 'quality') loadReadability();
   }
 
   // --------------------------------------------------------------- polling
@@ -1401,7 +1581,7 @@
     await loadStats();
     var current = state.projects.find(function (p) { return p.id === state.selectedId; });
     if (current && ['completed', 'failed', 'cancelled'].indexOf(current.status) !== -1) {
-      await Promise.all([loadArtifacts(), loadMetrics()]);
+      await Promise.all([loadArtifacts(), loadMetrics(), loadReadability()]);
       renderCompletionSummary(current);
       stopPolling();
       return;
@@ -1553,6 +1733,10 @@
       setActiveTab('files');
       return;
     }
+    if (command === 'quality') {
+      setActiveTab('quality');
+      return;
+    }
     if (command === 'settings') {
       setActiveTab('settings');
       return;
@@ -1588,6 +1772,8 @@
       brand: form.brand.value,
       tone: form.tone.value,
       language: form.language.value,
+      writing_style: form.writing_style.value,
+      humanize_level: form.humanize_level.value,
       chapter_titles: form.chapter_titles.value,
     };
   }
@@ -1601,6 +1787,8 @@
     el.settingsForm.elements.brand.value = project.brand || '';
     el.settingsForm.elements.tone.value = project.tone || '';
     el.settingsForm.elements.language.value = project.language || 'pl';
+    el.settingsForm.elements.writing_style.value = project.writing_style || 'practical';
+    el.settingsForm.elements.humanize_level.value = project.humanize_level || 'standard';
     el.settingsForm.elements.chapter_titles.value = (project.chapter_titles || []).join('\n');
     var locked = project.status === 'running';
     Array.from(el.settingsForm.elements).forEach(function (field) { field.disabled = locked; });
@@ -1648,6 +1836,8 @@
       brand: form.brand.value,
       tone: form.tone.value,
       language: form.language.value,
+      writing_style: form.writing_style.value,
+      humanize_level: form.humanize_level.value,
       chapter_titles: parseChapterTitles(form.chapter_titles.value),
     };
     setBusy(el.settingsSave, true);
@@ -1730,6 +1920,8 @@
       ['Odbiorca', data.get('audience') || 'Nie ustawiono'],
       ['Marka', data.get('brand') || 'Nie ustawiono'],
       ['Ton', data.get('tone') || 'Nie ustawiono'],
+      ['Styl pisania', WRITING_STYLE_LABELS[data.get('writing_style')] || 'Praktyczny'],
+      ['Humanizacja', HUMANIZE_LEVEL_LABELS[data.get('humanize_level')] || 'Humanizacja standardowa'],
       ['Agent', PROVIDER_LABELS[data.get('provider')] || data.get('provider') || 'Demo'],
       ['Struktura', chapters.length ? chapters.length + ' własnych rozdziałów' : 'Struktura presetu trybu'],
       ['Źródła', data.get('source_materials') ? 'Dołączono wklejony tekst' : 'Brak wklejonego tekstu'],
@@ -2009,6 +2201,10 @@
     loadArtifacts();
     loadMetrics();
   });
+  el.qualityRefresh.addEventListener('click', function () {
+    loadReadability();
+    loadMetrics();
+  });
   el.eventLevelFilter.addEventListener('change', function () {
     state.eventLevelFilter = el.eventLevelFilter.value;
     renderEvents();
@@ -2177,9 +2373,11 @@
         el.projectSearch.focus();
         return;
       }
-      if (['1', '2', '3', '4'].indexOf(event.key) !== -1 && state.selectedId) {
+      if (['1', '2', '3', '4', '5'].indexOf(event.key) !== -1 && state.selectedId) {
         event.preventDefault();
-        setActiveTab(['workflow', 'files', 'activity', 'settings'][Number(event.key) - 1]);
+        setActiveTab(
+          ['workflow', 'files', 'quality', 'activity', 'settings'][Number(event.key) - 1]
+        );
         return;
       }
     }

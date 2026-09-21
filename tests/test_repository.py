@@ -213,3 +213,54 @@ def test_events_survive_repository_reopen(tmp_path):
     assert len(events) == 1
     assert events[0].message == "hello"
     reopened.close()
+
+
+def test_migration_backfills_stage_rows_added_by_a_newer_build(tmp_path):
+    """A project created before a stage existed must gain that stage on upgrade."""
+    import sqlite3
+
+    db_path = tmp_path / "old.db"
+    repo = ProjectRepository(db_path)
+    project = repo.create_project(
+        ProjectCreate(title="Stary projekt", topic="temat", mode="lead-magnet")
+    )
+    repo.close()
+
+    # Simulate the pre-humanize schema: drop the stage and close the gap.
+    conn = sqlite3.connect(db_path)
+    conn.execute("DELETE FROM stages WHERE name = 'humanize'")
+    conn.execute("UPDATE stages SET position = position - 1 WHERE position > 4")
+    conn.commit()
+    conn.close()
+
+    upgraded = ProjectRepository(db_path)
+    try:
+        stages = upgraded.list_stages(project.id)
+        assert [s.name for s in stages] == [d.name for d in STAGE_DEFINITIONS]
+        assert [s.position for s in stages] == list(range(len(STAGE_DEFINITIONS)))
+        humanize_stage = next(s for s in stages if s.name == "humanize")
+        assert humanize_stage.status == "pending"
+    finally:
+        upgraded.close()
+
+
+def test_migration_adds_the_writing_columns_to_an_older_database(tmp_path):
+    import sqlite3
+
+    db_path = tmp_path / "legacy.db"
+    repo = ProjectRepository(db_path)
+    project = repo.create_project(
+        ProjectCreate(title="Legacy", topic="temat", mode="guide", humanize_level="strong")
+    )
+    repo.close()
+
+    conn = sqlite3.connect(db_path)
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(projects)")}
+    conn.close()
+    assert {"writing_style", "humanize_level"} <= columns
+
+    reopened = ProjectRepository(db_path)
+    try:
+        assert reopened.get_project(project.id).humanize_level == "strong"
+    finally:
+        reopened.close()

@@ -17,6 +17,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Optional
 
+from . import humanize
+
 MAX_LISTED_ARTIFACTS = 500
 MAX_PREVIEW_CHARS = 20_000
 WORDS_PER_PAGE = 300
@@ -257,6 +259,7 @@ def compute_metrics(project_dir: Path) -> dict:
     words = 0
     characters = 0
     chapter_rows: list[dict] = []
+    chapter_texts: list[str] = []
     for path in chapter_paths:
         try:
             text = path.read_text(encoding="utf-8", errors="replace")
@@ -264,6 +267,7 @@ def compute_metrics(project_dir: Path) -> dict:
             continue
         lines = text.strip().splitlines()
         title = lines[0].lstrip("# ").strip() if lines and lines[0].startswith("#") else path.stem
+        chapter_texts.append(text)
         chapter_words = count_words(text)
         words += chapter_words
         characters += len(text)
@@ -282,6 +286,18 @@ def compute_metrics(project_dir: Path) -> dict:
         except (OSError, json.JSONDecodeError):
             engine_info = {}
 
+    readability: dict = {}
+    humanize_path = project_dir / "qa" / "humanize.json"
+    if humanize_path.is_file():
+        try:
+            readability = json.loads(humanize_path.read_text(encoding="utf-8")).get("after", {})
+        except (OSError, json.JSONDecodeError):
+            readability = {}
+    if not readability and chapter_texts:
+        # No humanize run yet (or an older project): score what is on disk so
+        # the UI can show readability from the first drafted chapter onwards.
+        readability = humanize.analyze("\n\n".join(chapter_texts)).to_dict()
+
     return {
         "chapters": len(chapter_rows),
         "words": words,
@@ -292,6 +308,11 @@ def compute_metrics(project_dir: Path) -> dict:
         "total_bytes": total_bytes,
         "pdf_engine": engine_info.get("pdf_engine"),
         "print_grade": bool(engine_info.get("print_grade", False)),
+        "ai_score": readability.get("ai_score"),
+        "readability_grade": readability.get("grade"),
+        "burstiness": readability.get("burstiness"),
+        "avg_sentence_words": readability.get("avg_sentence_words"),
+        "readability": readability,
         "chapter_breakdown": chapter_rows,
     }
 

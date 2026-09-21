@@ -13,6 +13,7 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 
+from ebook_factory.models import STAGE_DEFINITIONS
 from ebook_factory.api import WorkerRegistry, build_router
 from ebook_factory.app import create_app
 from ebook_factory.models import ProjectCreate
@@ -217,4 +218,4 @@ def test_version_endpoint_reports_name_version_and_license(client):
     assert body["name"] == "ebook-factory"
     assert body["license"] == "MIT"
     assert body["version"]
-    assert body["stages"] == 11
+    assert body["stages"] == len(STAGE_DEFINITIONS)

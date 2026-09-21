@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -13,11 +14,15 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from . import LICENSE, __version__
+from .humanize import HUMANIZE_LEVEL_LABELS, HUMAN_SCORE_TARGET
+from .prose import WRITING_STYLE_LABELS
 from .models import (
     MAX_CHAPTER_TITLES,
     MAX_SOURCE_MATERIALS_CHARS,
+    PROJECT_HUMANIZE_LEVELS,
     PROJECT_MODES,
     PROJECT_PROVIDERS,
+    PROJECT_WRITING_STYLES,
     STAGE_DEFINITIONS,
     Event,
     Project,
@@ -27,7 +32,7 @@ from .models import (
 )
 from .pipeline import PipelineRunner
 from .providers import provider_statuses
-from . import workspace
+from . import humanize, workspace
 from .sources import (
     MAX_SOURCE_FILES_PER_PROJECT,
     SourceUploadError,
@@ -50,6 +55,8 @@ class ProjectCreateRequest(BaseModel):
     source_materials: Optional[str] = Field(default=None, max_length=MAX_SOURCE_MATERIALS_CHARS)
     provider: Literal["demo", "codex-cli", "claude-code"] = "demo"
     chapter_titles: list[str] = Field(default_factory=list, max_length=MAX_CHAPTER_TITLES)
+    writing_style: Literal["practical", "narrative", "expert"] = "practical"
+    humanize_level: Literal["off", "light", "standard", "strong"] = "standard"
 
 
 class ProjectUpdateRequest(BaseModel):
@@ -65,6 +72,8 @@ class ProjectUpdateRequest(BaseModel):
     source_materials: Optional[str] = Field(default=None, max_length=MAX_SOURCE_MATERIALS_CHARS)
     provider: Optional[Literal["demo", "codex-cli", "claude-code"]] = None
     chapter_titles: Optional[list[str]] = Field(default=None, max_length=MAX_CHAPTER_TITLES)
+    writing_style: Optional[Literal["practical", "narrative", "expert"]] = None
+    humanize_level: Optional[Literal["off", "light", "standard", "strong"]] = None
 
 
 def _project_dict(project: Project, stages: Optional[list[Stage]] = None) -> dict:
@@ -80,6 +89,8 @@ def _project_dict(project: Project, stages: Optional[list[Stage]] = None) -> dic
         "tone": project.tone,
         "provider": project.provider,
         "chapter_titles": list(project.chapter_titles or []),
+        "writing_style": project.writing_style,
+        "humanize_level": project.humanize_level,
         "status": project.status,
         "progress": project.progress,
         "created_at": project.created_at,
@@ -240,6 +251,8 @@ def build_router(
             "stages": len(STAGE_DEFINITIONS),
             "modes": list(PROJECT_MODES),
             "providers": list(PROJECT_PROVIDERS),
+            "writing_styles": list(PROJECT_WRITING_STYLES),
+            "humanize_levels": list(PROJECT_HUMANIZE_LEVELS),
         }
 
     @router.get("/api/providers")
@@ -272,6 +285,8 @@ def build_router(
                 source_materials=payload.source_materials,
                 provider=payload.provider,
                 chapter_titles=payload.chapter_titles,
+                writing_style=payload.writing_style,
+                humanize_level=payload.humanize_level,
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -328,6 +343,8 @@ def build_router(
             source_materials=project.source_materials,
             provider=project.provider,
             chapter_titles=list(project.chapter_titles or []),
+            writing_style=project.writing_style,
+            humanize_level=project.humanize_level,
         )
         clone = repository.create_project(data)
         repository.append_event(clone.id, "info", f"duplicated from {project.slug}")
@@ -495,6 +512,71 @@ def build_router(
         """Word/page/chapter counters recomputed from the files on disk."""
         project = _get_project_or_404(project_id)
         return workspace.compute_metrics(projects_root / project.slug)
+
+    @router.get("/api/projects/{project_id}/readability")
+    def project_readability(project_id: str) -> dict:
+        """How human the manuscript reads, recomputed from the chapters on disk.
+
+        The humanize stage stores its own before/after report; when it has not
+        run yet, the chapters are scored live so the panel is useful from the
+        first draft onwards.
+        """
+        project = _get_project_or_404(project_id)
+        project_dir = projects_root / project.slug
+        stored: dict = {}
+        report_path = project_dir / "qa" / "humanize.json"
+        if report_path.is_file():
+            try:
+                stored = json.loads(report_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                stored = {}
+        if stored:
+            stored["source"] = "humanize-stage"
+            stored["target"] = HUMAN_SCORE_TARGET
+            stored["level_label"] = HUMANIZE_LEVEL_LABELS.get(
+                stored.get("level", project.humanize_level), project.humanize_level
+            )
+            stored["style_label"] = WRITING_STYLE_LABELS.get(
+                project.writing_style, project.writing_style
+            )
+            return stored
+
+        chapters_dir = project_dir / "chapters"
+        texts = []
+        if chapters_dir.is_dir():
+            for path in sorted(chapters_dir.glob("chapter-*.md")):
+                try:
+                    texts.append(path.read_text(encoding="utf-8", errors="replace"))
+                except OSError:
+                    continue
+        if not texts:
+            return {
+                "source": "empty",
+                "target": HUMAN_SCORE_TARGET,
+                "level": project.humanize_level,
+                "level_label": HUMANIZE_LEVEL_LABELS.get(
+                    project.humanize_level, project.humanize_level
+                ),
+                "style_label": WRITING_STYLE_LABELS.get(
+                    project.writing_style, project.writing_style
+                ),
+                "after": None,
+                "chapters": [],
+            }
+        report = humanize.analyze("\n\n".join(texts))
+        return {
+            "source": "live",
+            "target": HUMAN_SCORE_TARGET,
+            "level": project.humanize_level,
+            "level_label": HUMANIZE_LEVEL_LABELS.get(
+                project.humanize_level, project.humanize_level
+            ),
+            "style_label": WRITING_STYLE_LABELS.get(
+                project.writing_style, project.writing_style
+            ),
+            "after": report.to_dict(),
+            "chapters": [],
+        }
 
     def _resolve_or_http(project: Project, path: str) -> Path:
         try:

@@ -82,7 +82,7 @@
         <p>Workspace pokaże proces, pliki, aktywność, źródła i wyniki po wybraniu projektu.</p>
         <ol class="onboarding-steps">
           <li><strong>Opisz materiał</strong> — tytuł, temat, tryb i odbiorca w kreatorze.</li>
-          <li><strong>Uruchom produkcję</strong> — 11 etapów od strategii po paczkę ZIP.</li>
+          <li><strong>Uruchom produkcję</strong> — 12 etapów od strategii, przez humanizację tekstu, po paczkę ZIP.</li>
           <li><strong>Sprawdź i pobierz</strong> — podgląd plików, metryki i raport jakości.</li>
         </ol>
         <button type="button" class="btn btn-primary" id="empty-new-project-button">+ Nowy ebook</button>
@@ -131,6 +131,7 @@
         <div class="tabbar" role="tablist" aria-label="Widoki projektu">
           <button type="button" role="tab" aria-selected="true" aria-controls="panel-workflow" id="tab-workflow" class="tab is-active" data-tab="workflow">Proces</button>
           <button type="button" role="tab" aria-selected="false" aria-controls="panel-files" id="tab-files" class="tab" data-tab="files">Pliki</button>
+          <button type="button" role="tab" aria-selected="false" aria-controls="panel-quality" id="tab-quality" class="tab" data-tab="quality">Tekst</button>
           <button type="button" role="tab" aria-selected="false" aria-controls="panel-activity" id="tab-activity" class="tab" data-tab="activity">Aktywność</button>
           <button type="button" role="tab" aria-selected="false" aria-controls="panel-settings" id="tab-settings" class="tab" data-tab="settings">Ustawienia</button>
         </div>
@@ -158,6 +159,31 @@
           </div>
           <p class="panel-summary" id="files-summary" aria-live="polite"></p>
           <div class="file-grid" id="workspace-files"></div>
+        </section>
+
+        <section id="panel-quality" role="tabpanel" aria-labelledby="tab-quality" class="tab-panel" hidden>
+          <div class="files-toolbar">
+            <p class="panel-summary" id="quality-summary" aria-live="polite">Ślad AI liczony jest z rozdziałów zapisanych w workspace.</p>
+            <button type="button" class="btn btn-secondary" id="quality-refresh">Przelicz</button>
+          </div>
+          <div class="quality-hero" id="quality-hero" hidden>
+            <div class="score-dial" id="quality-dial" role="img" aria-label="Ślad AI">
+              <span class="score-value" id="quality-score">—</span>
+              <span class="score-scale">/100 śladu AI</span>
+            </div>
+            <div class="quality-headline">
+              <p class="eyebrow" id="quality-grade"></p>
+              <h2 id="quality-verdict">Jak bardzo tekst brzmi jak maszyna</h2>
+              <p class="meta" id="quality-delta"></p>
+              <div class="score-track" aria-hidden="true"><div class="score-track-fill" id="quality-track-fill"></div></div>
+              <p class="field-help" id="quality-config"></p>
+            </div>
+          </div>
+          <dl class="metric-grid" id="quality-metrics" aria-label="Wskaźniki czytelności" hidden></dl>
+          <h3 class="panel-heading" id="quality-findings-heading" hidden>Co zostaje dla redaktora</h3>
+          <ul class="findings-list" id="quality-findings" aria-label="Wykryte ślady AI"></ul>
+          <h3 class="panel-heading" id="quality-chapters-heading" hidden>Rozdział po rozdziale</h3>
+          <div class="chapter-scores" id="quality-chapters"></div>
         </section>
 
         <section id="panel-activity" role="tabpanel" aria-labelledby="tab-activity" class="tab-panel" hidden>
@@ -214,6 +240,23 @@
             <div class="field">
               <label for="settings-tone">Ton</label>
               <input type="text" id="settings-tone" name="tone">
+            </div>
+            <div class="field">
+              <label for="settings-writing-style">Styl pisania</label>
+              <select id="settings-writing-style" name="writing_style">
+                <option value="practical">Praktyczny (instrukcje i checklisty)</option>
+                <option value="narrative">Narracyjny (historie i przykłady)</option>
+                <option value="expert">Ekspercki (analiza i argumenty)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="settings-humanize-level">Humanizacja tekstu</label>
+              <select id="settings-humanize-level" name="humanize_level">
+                <option value="off">Wyłączona</option>
+                <option value="light">Lekka — zwroty-wytrychy</option>
+                <option value="standard">Standardowa — wata, łączniki, długie zdania</option>
+                <option value="strong">Mocna — dodatkowo rytm i powtórzenia</option>
+              </select>
             </div>
             <div class="field">
               <label for="settings-language">Język</label>
@@ -318,7 +361,7 @@
       <div><dt><kbd>Ctrl</kbd> / <kbd>⌘</kbd> + <kbd>K</kbd></dt><dd>Paleta komend</dd></div>
       <div><dt><kbd>N</kbd></dt><dd>Nowy ebook</dd></div>
       <div><dt><kbd>/</kbd></dt><dd>Szukaj w projektach</dd></div>
-      <div><dt><kbd>1</kbd> – <kbd>4</kbd></dt><dd>Proces · Pliki · Aktywność · Ustawienia</dd></div>
+      <div><dt><kbd>1</kbd> – <kbd>5</kbd></dt><dd>Proces · Pliki · Tekst · Aktywność · Ustawienia</dd></div>
       <div><dt><kbd>R</kbd></dt><dd>Odśwież dane projektu</dd></div>
       <div><dt><kbd>↑</kbd> <kbd>↓</kbd></dt><dd>Nawigacja po liście projektów</dd></div>
       <div><dt><kbd>?</kbd></dt><dd>Ten spis skrótów</dd></div>
@@ -390,6 +433,25 @@
         <div class="field">
           <label for="field-tone">Ton</label>
           <input type="text" id="field-tone" name="tone" placeholder="np. rzeczowy">
+        </div>
+        <div class="field">
+          <label for="field-writing-style">Styl pisania</label>
+          <select id="field-writing-style" name="writing_style">
+            <option value="practical" selected>Praktyczny (instrukcje i checklisty)</option>
+            <option value="narrative">Narracyjny (historie i przykłady)</option>
+            <option value="expert">Ekspercki (analiza i argumenty)</option>
+          </select>
+          <p class="field-help" id="writing-style-help">Styl decyduje o tym, z czego zbudowane są rozdziały: kroków, historii czy argumentów.</p>
+        </div>
+        <div class="field">
+          <label for="field-humanize-level">Humanizacja tekstu</label>
+          <select id="field-humanize-level" name="humanize_level">
+            <option value="off">Wyłączona</option>
+            <option value="light">Lekka — zwroty-wytrychy</option>
+            <option value="standard" selected>Standardowa — wata, łączniki, długie zdania</option>
+            <option value="strong">Mocna — dodatkowo rytm i powtórzenia</option>
+          </select>
+          <p class="field-help" id="humanize-level-help">Osobny etap produkcji usuwa z gotowych rozdziałów ślady maszynowego pisania i raportuje, co zostało poprawione.</p>
         </div>
       </section>
 

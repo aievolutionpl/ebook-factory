@@ -8,8 +8,13 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import NamedTuple, Optional
 
+from .humanize import DEFAULT_HUMANIZE_LEVEL, HUMANIZE_LEVELS
+from .prose import DEFAULT_WRITING_STYLE, WRITING_STYLES
+
 PROJECT_MODES: tuple[str, ...] = ("lead-magnet", "guide", "premium")
 PROJECT_PROVIDERS: tuple[str, ...] = ("demo", "codex-cli", "claude-code")
+PROJECT_WRITING_STYLES: tuple[str, ...] = WRITING_STYLES
+PROJECT_HUMANIZE_LEVELS: tuple[str, ...] = HUMANIZE_LEVELS
 PROJECT_STATUSES: tuple[str, ...] = (
     "draft",
     "running",
@@ -46,7 +51,7 @@ class ModeConfig(NamedTuple):
 MODE_CONFIG: dict[str, ModeConfig] = {
     "lead-magnet": ModeConfig("Lead magnet", (15, 30), 5, 320),
     "guide": ModeConfig("Poradnik ekspercki", (40, 100), 8, 600),
-    "premium": ModeConfig("Ksiazka premium", (150, 300), 14, 900),
+    "premium": ModeConfig("Książka premium", (150, 300), 14, 900),
 }
 
 
@@ -55,6 +60,7 @@ STAGE_DEFINITIONS: tuple[StageDefinition, ...] = (
     StageDefinition("research", "Research"),
     StageDefinition("outline", "Architektura"),
     StageDefinition("draft", "Draft"),
+    StageDefinition("humanize", "Humanizacja"),
     StageDefinition("edit", "Redakcja"),
     StageDefinition("fact_check", "Fact-check"),
     StageDefinition("design", "Design"),
@@ -121,6 +127,8 @@ class ProjectCreate:
     source_materials: Optional[str] = None
     provider: str = "demo"
     chapter_titles: list[str] = field(default_factory=list)
+    writing_style: str = DEFAULT_WRITING_STYLE
+    humanize_level: str = DEFAULT_HUMANIZE_LEVEL
 
     def __post_init__(self) -> None:
         if not self.title or not self.title.strip():
@@ -134,6 +142,16 @@ class ProjectCreate:
         if self.provider not in PROJECT_PROVIDERS:
             raise ValueError(
                 f"invalid provider {self.provider!r}; expected one of {PROJECT_PROVIDERS}"
+            )
+        if self.writing_style not in PROJECT_WRITING_STYLES:
+            raise ValueError(
+                f"invalid writing_style {self.writing_style!r}; "
+                f"expected one of {PROJECT_WRITING_STYLES}"
+            )
+        if self.humanize_level not in PROJECT_HUMANIZE_LEVELS:
+            raise ValueError(
+                f"invalid humanize_level {self.humanize_level!r}; "
+                f"expected one of {PROJECT_HUMANIZE_LEVELS}"
             )
         if self.source_materials is not None and len(self.source_materials) > MAX_SOURCE_MATERIALS_CHARS:
             raise ValueError(
@@ -161,6 +179,8 @@ class Project:
     error: Optional[str] = None
     provider: str = "demo"
     chapter_titles: list[str] = field(default_factory=list)
+    writing_style: str = DEFAULT_WRITING_STYLE
+    humanize_level: str = DEFAULT_HUMANIZE_LEVEL
 
 
 @dataclass

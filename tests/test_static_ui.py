@@ -716,3 +716,90 @@ def test_new_v2_copy_is_polish():
         "Struktura rozdziałów",
     ):
         assert text in html or text in app_js
+
+
+# ------------------------------------------------------ text quality surface
+
+
+def test_quality_tab_and_panel_exist():
+    html = read("index.html")
+    for fragment in (
+        'id="tab-quality"',
+        'id="panel-quality"',
+        'aria-controls="panel-quality"',
+        'id="quality-score"',
+        'id="quality-findings"',
+        'id="quality-chapters"',
+        'id="quality-refresh"',
+    ):
+        assert fragment in html
+
+
+def test_quality_panel_reads_the_readability_endpoint():
+    app_js = read("app.js")
+    assert "'/api/projects/' + state.selectedId + '/readability'" in app_js
+    assert "renderQuality" in app_js
+    assert "loadReadability" in app_js
+    assert "scoreTone" in app_js
+
+
+def test_quality_panel_never_shows_raw_finding_codes():
+    app_js = read("app.js")
+    # Findings render their Polish label and hint from the API payload.
+    assert "finding.label" in app_js
+    assert "finding.hint" in app_js
+    assert "escapeHtml(finding.code)" not in app_js
+
+
+def test_score_is_never_communicated_by_colour_alone():
+    app_js = read("app.js")
+    html = read("index.html")
+    # The dial carries a number and a grade in text, not just a tone class.
+    assert "el.qualityScore.textContent = score" in app_js
+    assert "el.qualityGrade.textContent = 'Ocena: '" in app_js
+    assert 'id="quality-grade"' in html
+    assert "setAttribute('aria-label', 'Ślad AI: '" in app_js
+
+
+def test_writing_style_and_humanizer_are_configurable_in_both_forms():
+    html = read("index.html")
+    for field_id in (
+        "field-writing-style",
+        "field-humanize-level",
+        "settings-writing-style",
+        "settings-humanize-level",
+    ):
+        assert f'id="{field_id}"' in html
+    for value in ("practical", "narrative", "expert"):
+        assert f'value="{value}"' in html
+    for value in ("off", "light", "standard", "strong"):
+        assert f'value="{value}"' in html
+
+
+def test_writing_setup_is_sent_to_the_api():
+    app_js = read("app.js")
+    assert "writing_style: form.writing_style.value" in app_js
+    assert "humanize_level: form.humanize_level.value" in app_js
+
+
+def test_humanize_stage_is_translated_like_every_other_stage():
+    app_js = read("app.js")
+    assert "humanize: 'Humanizacja'" in app_js
+    assert "WRITING_STYLE_LABELS" in app_js
+    assert "HUMANIZE_LEVEL_LABELS" in app_js
+
+
+def test_quality_tab_has_a_keyboard_shortcut():
+    app_js = read("app.js")
+    html = read("index.html")
+    assert "'workflow', 'files', 'quality', 'activity', 'settings'" in app_js
+    assert "<kbd>5</kbd>" in html
+
+
+def test_quality_styles_are_tokenized_and_have_a_mobile_layout():
+    css = read("styles.css")
+    for selector in (".quality-hero", ".score-dial", ".findings-list", ".chapter-scores"):
+        assert selector in css
+    quality_block = css[css.index(".quality-hero"):]
+    assert "#" not in quality_block.split("@media")[0]
+    assert re.search(r"@media \(max-width: 767px\).*?\.quality-hero", css, re.S)
